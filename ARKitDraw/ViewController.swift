@@ -10,20 +10,29 @@ import UIKit
 import SceneKit
 import ARKit
 
-class ViewController: UIViewController, ARSCNViewDelegate {
+class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource {
 
     @IBOutlet var sceneView: ARSCNView!
-    var previousPoint: SCNVector3?
     @IBOutlet weak var button: UIButton!
-    var lineColor = UIColor.white
+    @IBOutlet weak var textField: UITextField!
     
-    var buttonHighlighted = false
+    // Array to track all tweet nodes and their text
+    private var tweetNodes: [SCNNode] = []
+    private var tweetTexts: [String] = []
+    
+    // UI elements for tweet history
+    private var historyButton: UIButton!
+    private var historyTableView: UITableView!
+    private var isHistoryVisible = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
         // Set the view's delegate
         sceneView.delegate = self
+        
+        // Set text field delegate
+        textField.delegate = self
         
         // Show statistics such as fps and timing information
         sceneView.showsStatistics = true
@@ -33,6 +42,11 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         
         // Set the scene to the view
         sceneView.scene = scene
+        
+        // Setup UI
+        setupUI()
+        
+
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -56,33 +70,204 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         super.didReceiveMemoryWarning()
         // Release any cached data, images, etc that aren't in use.
     }
-
-    // MARK: - ARSCNViewDelegate
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-        DispatchQueue.main.async {
-            self.buttonHighlighted = self.button.isHighlighted
-        }
-    }
-    func renderer(_ renderer: SCNSceneRenderer, willRenderScene scene: SCNScene, atTime time: TimeInterval) {
+    
+    func setupUI() {
+        // Configure text field
+        textField.placeholder = "Enter your tweet..."
+        textField.borderStyle = .roundedRect
+        textField.backgroundColor = UIColor.white.withAlphaComponent(0.9)
+        textField.textColor = UIColor.black
         
-        guard let pointOfView = sceneView.pointOfView else { return }
+        // Configure button
+        button.setTitle("Enter", for: .normal)
+        button.backgroundColor = UIColor.systemBlue
+        button.setTitleColor(UIColor.white, for: .normal)
+        button.layer.cornerRadius = 8
         
-        let mat = pointOfView.transform
-        let dir = SCNVector3(-1 * mat.m31, -1 * mat.m32, -1 * mat.m33)
-        let currentPosition = pointOfView.position + (dir * 0.1)
+        // Add button action
+        button.addTarget(self, action: #selector(enterButtonTapped), for: .touchUpInside)
         
-        if buttonHighlighted {
-            if let previousPoint = previousPoint {
-                let line = lineFrom(vector: previousPoint, toVector: currentPosition)
-                let lineNode = SCNNode(geometry: line)
-                lineNode.geometry?.firstMaterial?.diffuse.contents = lineColor
-                sceneView.scene.rootNode.addChildNode(lineNode)
-            }
-        }
-        previousPoint = currentPosition
-        glLineWidth(20)
+        // Add tweet history button
+        historyButton = UIButton(type: .system)
+        historyButton.setTitle("📝", for: .normal)
+        historyButton.titleLabel?.font = UIFont.systemFont(ofSize: 24)
+        historyButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        historyButton.setTitleColor(UIColor.white, for: .normal)
+        historyButton.layer.cornerRadius = 25
+        historyButton.layer.masksToBounds = true
+        historyButton.translatesAutoresizingMaskIntoConstraints = false
+        historyButton.addTarget(self, action: #selector(historyButtonTapped), for: .touchUpInside)
+        view.addSubview(historyButton)
+        
+        // Position history button at top-left
+        NSLayoutConstraint.activate([
+            historyButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            historyButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            historyButton.widthAnchor.constraint(equalToConstant: 50),
+            historyButton.heightAnchor.constraint(equalToConstant: 50)
+        ])
+        
+        // Add history table view (initially hidden)
+        historyTableView = UITableView()
+        historyTableView.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        historyTableView.layer.cornerRadius = 10
+        historyTableView.layer.masksToBounds = true
+        historyTableView.delegate = self
+        historyTableView.dataSource = self
+        historyTableView.register(UITableViewCell.self, forCellReuseIdentifier: "TweetCell")
+        historyTableView.translatesAutoresizingMaskIntoConstraints = false
+        historyTableView.isHidden = true
+        view.addSubview(historyTableView)
+        
+        // Position history table view below the button
+        NSLayoutConstraint.activate([
+            historyTableView.topAnchor.constraint(equalTo: historyButton.bottomAnchor, constant: 5),
+            historyTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            historyTableView.widthAnchor.constraint(equalToConstant: 250),
+            historyTableView.heightAnchor.constraint(equalToConstant: 200)
+        ])
     }
     
+
+    
+    @objc func enterButtonTapped() {
+        guard let tweetText = textField.text, !tweetText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Show alert if text is empty
+            let alert = UIAlertController(title: "Empty Tweet", message: "Please enter some text for your tweet.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        
+        createTweet(text: tweetText)
+        textField.text = ""
+        textField.resignFirstResponder()
+    }
+    
+    func createTweet(text: String) {
+        guard let pointOfView = sceneView.pointOfView else { return }
+        
+        // Get camera position and direction
+        let mat = pointOfView.transform
+        let dir = SCNVector3(-1 * mat.m31, -1 * mat.m32, -1 * mat.m33)
+        
+        // Calculate position at screen center height (same Y as camera, but in front)
+        let cameraPosition = pointOfView.position
+        let tweetPosition = SCNVector3(
+            cameraPosition.x + (dir.x * 0.5),
+            cameraPosition.y, // Same height as camera
+            cameraPosition.z + (dir.z * 0.5)
+        )
+        
+        // Create text geometry
+        let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
+        textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
+        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
+        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.8)
+        
+        // Create text node
+        let textNode = SCNNode(geometry: textGeometry)
+        textNode.position = tweetPosition
+        
+        // Center the text
+        let (min, max) = textGeometry.boundingBox
+        let dx = Float(max.x - min.x)
+        let dy = Float(max.y - min.y)
+        let dz = Float(max.z - min.z)
+        textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
+        
+        // Make text face the camera
+        textNode.constraints = [SCNBillboardConstraint()]
+        
+        // Store reference to the tweet node and text
+        tweetNodes.append(textNode)
+        tweetTexts.append(text)
+        
+        // Add to scene
+        sceneView.scene.rootNode.addChildNode(textNode)
+        
+        // Add some animation
+        textNode.scale = SCNVector3(0, 0, 0)
+        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
+        scaleAction.timingMode = .easeOut
+        textNode.runAction(scaleAction)
+    }
+    
+    @objc func historyButtonTapped() {
+        isHistoryVisible.toggle()
+        
+        if isHistoryVisible {
+            historyTableView.isHidden = false
+            historyTableView.reloadData()
+            
+            // Animate in
+            historyTableView.alpha = 0
+            UIView.animate(withDuration: 0.3) {
+                self.historyTableView.alpha = 1
+            }
+        } else {
+            // Animate out
+            UIView.animate(withDuration: 0.3) {
+                self.historyTableView.alpha = 0
+            } completion: { _ in
+                self.historyTableView.isHidden = true
+            }
+        }
+    }
+    
+    func deleteTweet(at index: Int) {
+        guard index < tweetNodes.count && index < tweetTexts.count else { return }
+        
+        // Remove from arrays
+        let nodeToRemove = tweetNodes.remove(at: index)
+        tweetTexts.remove(at: index)
+        
+        // Add fade out animation
+        let fadeAction = SCNAction.fadeOut(duration: 0.3)
+        let removeAction = SCNAction.removeFromParentNode()
+        let sequence = SCNAction.sequence([fadeAction, removeAction])
+        nodeToRemove.runAction(sequence)
+        
+        // Reload table view
+        historyTableView.reloadData()
+    }
+    
+    // MARK: - UITableViewDataSource
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return tweetTexts.count
+    }
+    
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath)
+        cell.textLabel?.text = tweetTexts[indexPath.row]
+        cell.textLabel?.textColor = UIColor.white
+        cell.backgroundColor = UIColor.clear
+        cell.selectionStyle = .none
+        
+        // Add delete button to cell
+        let deleteButton = UIButton(type: .system)
+        deleteButton.setTitle("🗑️", for: .normal)
+        deleteButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
+        deleteButton.tag = indexPath.row
+        deleteButton.addTarget(self, action: #selector(deleteButtonTapped(_:)), for: .touchUpInside)
+        deleteButton.frame = CGRect(x: cell.contentView.frame.width - 40, y: 5, width: 30, height: 30)
+        cell.contentView.addSubview(deleteButton)
+        
+        return cell
+    }
+    
+    @objc func deleteButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        deleteTweet(at: index)
+    }
+    
+    // MARK: - UITextFieldDelegate
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        enterButtonTapped()
+        return true
+    }
+    
+    // MARK: - ARSCNViewDelegate
     func session(_ session: ARSession, didFailWithError error: Error) {
         // Present an error message to the user
     }
@@ -93,17 +278,7 @@ class ViewController: UIViewController, ARSCNViewDelegate {
     
     func sessionInterruptionEnded(_ session: ARSession) {
         // Reset tracking and/or remove existing anchors if consistent tracking is required
-        
     }
     
-    func lineFrom(vector vector1: SCNVector3, toVector vector2: SCNVector3) -> SCNGeometry {
-        
-        let indices: [Int32] = [0, 1]
-        
-        let source = SCNGeometrySource(vertices: [vector1, vector2])
-        let element = SCNGeometryElement(indices: indices, primitiveType: .line)
-        
-        return SCNGeometry(sources: [source], elements: [element])
-        
-    }
+
 }
