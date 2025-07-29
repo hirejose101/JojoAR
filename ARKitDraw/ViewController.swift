@@ -25,6 +25,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var historyTableView: UITableView!
     private var isHistoryVisible = false
     
+    // Tap to place functionality
+    private var pendingTweetText: String?
+    private var isWaitingForTap = false
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -46,7 +50,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup UI
         setupUI()
         
-
+        // Add tap gesture recognizer
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        sceneView.addGestureRecognizer(tapGesture)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -128,8 +134,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
     }
     
-
-    
     @objc func enterButtonTapped() {
         guard let tweetText = textField.text, !tweetText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Show alert if text is empty
@@ -139,9 +143,85 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        createTweet(text: tweetText)
+        // Store the tweet text and wait for tap
+        pendingTweetText = tweetText
+        isWaitingForTap = true
+        
+        // Update button to show we're waiting for tap
+        button.setTitle("Tap to Place", for: .normal)
+        button.backgroundColor = UIColor.systemOrange
+        
+        // Clear text field and hide keyboard
         textField.text = ""
         textField.resignFirstResponder()
+        
+        // Show instruction to user
+        let alert = UIAlertController(title: "Tap to Place", message: "Tap anywhere on the screen to place your tweet!", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard isWaitingForTap, let tweetText = pendingTweetText else { return }
+        
+        let location = gesture.location(in: sceneView)
+        createTweetAtLocation(text: tweetText, location: location)
+        
+        // Reset state
+        isWaitingForTap = false
+        pendingTweetText = nil
+        
+        // Reset button
+        button.setTitle("Enter", for: .normal)
+        button.backgroundColor = UIColor.systemBlue
+    }
+    
+    func createTweetAtLocation(text: String, location: CGPoint) {
+        // Perform hit test to find where to place the tweet
+        let hitTestResults = sceneView.hitTest(location, types: [.featurePoint, .estimatedHorizontalPlane])
+        
+        guard let hitTestResult = hitTestResults.first else {
+            // If no hit test result, place at a default distance in front of camera
+            createTweet(text: text)
+            return
+        }
+        
+        // Get the world position from the hit test
+        let worldPosition = hitTestResult.worldTransform.columns.3
+        let tweetPosition = SCNVector3(worldPosition.x, worldPosition.y, worldPosition.z)
+        
+        // Create text geometry
+        let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
+        textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
+        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
+        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.8)
+        
+        // Create text node
+        let textNode = SCNNode(geometry: textGeometry)
+        textNode.position = tweetPosition
+        
+        // Center the text
+        let (min, max) = textGeometry.boundingBox
+        let dx = Float(max.x - min.x)
+        let dy = Float(max.y - min.y)
+        let dz = Float(max.z - min.z)
+        textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
+        
+        // Make text face the camera
+        textNode.constraints = [SCNBillboardConstraint()]
+        
+        // Store reference to the tweet node and text
+        tweetNodes.append(textNode)
+        tweetTexts.append(text)
+        
+        // Add to scene
+        sceneView.scene.rootNode.addChildNode(textNode)
+        
+        // Add some animation
+        textNode.scale = SCNVector3(0, 0, 0)
+        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
+        scaleAction.timingMode = .easeOut
+        textNode.runAction(scaleAction)
     }
     
     func createTweet(text: String) {
@@ -279,6 +359,4 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func sessionInterruptionEnded(_ session: ARSession) {
         // Reset tracking and/or remove existing anchors if consistent tracking is required
     }
-    
-
 }
