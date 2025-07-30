@@ -9,6 +9,7 @@
 import UIKit
 import SceneKit
 import ARKit
+import CoreLocation
 
 class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource {
 
@@ -28,6 +29,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // Tap to place functionality
     private var pendingTweetText: String?
     private var isWaitingForTap = false
+    
+    // Firebase and Location services
+    private var firebaseService: FirebaseService!
+    private var locationManager: LocationManager!
+    private var nearbyTweets: [PersistentTweet] = []
+    private var currentUserId: String?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -50,6 +57,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup UI
         setupUI()
         
+        // Initialize Firebase and Location services
+        setupServices()
+        
         // Add tap gesture recognizer
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         sceneView.addGestureRecognizer(tapGesture)
@@ -70,6 +80,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Pause the view's session
         sceneView.session.pause()
+        
+        // Stop location updates
+        locationManager?.stopLocationUpdates()
     }
     
     override func didReceiveMemoryWarning() {
@@ -134,6 +147,104 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
     }
     
+    func setupServices() {
+        // Initialize Firebase service
+        firebaseService = FirebaseService()
+        
+        // Initialize location manager
+        locationManager = LocationManager()
+        locationManager.locationUpdateHandler = { [weak self] location in
+            self?.onLocationUpdated(location)
+        }
+        
+        // Sign in anonymously to Firebase
+        firebaseService.signInAnonymously { [weak self] userId, error in
+            if let error = error {
+                print("Firebase sign in error: \(error)")
+                return
+            }
+            
+            self?.currentUserId = userId
+            print("Signed in with user ID: \(userId ?? "unknown")")
+            
+            // Start location updates after authentication
+            DispatchQueue.main.async {
+                self?.locationManager.startLocationUpdates()
+            }
+        }
+    }
+    
+    func onLocationUpdated(_ location: CLLocation) {
+        // Load nearby tweets when location changes
+        loadNearbyTweets(location: location)
+    }
+    
+    func loadNearbyTweets(location: CLLocation) {
+        firebaseService.fetchNearbyTweets(location: location, radius: 100) { [weak self] tweets, error in
+            if let error = error {
+                print("Error loading nearby tweets: \(error)")
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self?.renderNearbyTweets(tweets)
+            }
+        }
+    }
+    
+    func renderNearbyTweets(_ tweets: [PersistentTweet]) {
+        // Remove existing nearby tweet nodes
+        for node in sceneView.scene.rootNode.childNodes {
+            if node.name?.hasPrefix("nearby_tweet_") == true {
+                node.removeFromParentNode()
+            }
+        }
+        
+        // Render new tweets
+        for tweet in tweets {
+            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
+            textNode.name = "nearby_tweet_\(tweet.id)"
+            
+            // Add different styling for nearby tweets
+            textNode.geometry?.firstMaterial?.diffuse.contents = UIColor.systemBlue
+            textNode.geometry?.firstMaterial?.emission.contents = UIColor.systemBlue.withAlphaComponent(0.6)
+            
+            sceneView.scene.rootNode.addChildNode(textNode)
+        }
+        
+        nearbyTweets = tweets
+    }
+    
+    func createTextNode(text: String, position: SCNVector3) -> SCNNode {
+        // Create text geometry
+        let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
+        textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
+        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
+        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.8)
+        
+        // Create text node
+        let textNode = SCNNode(geometry: textGeometry)
+        textNode.position = position
+        
+        // Center the text
+        let (min, max) = textGeometry.boundingBox
+        let dx = Float(max.x - min.x)
+        let dy = Float(max.y - min.y)
+        let dz = Float(max.z - min.z)
+        textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
+        
+        // Make text face the camera
+        textNode.constraints = [SCNBillboardConstraint()]
+        
+        // Add some animation
+        textNode.scale = SCNVector3(0, 0, 0)
+        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
+        scaleAction.timingMode = .easeOut
+        textNode.runAction(scaleAction)
+        
+        return textNode
+    }
+    
     @objc func enterButtonTapped() {
         guard let tweetText = textField.text, !tweetText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Show alert if text is empty
@@ -190,25 +301,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let worldPosition = hitTestResult.worldTransform.columns.3
         let tweetPosition = SCNVector3(worldPosition.x, worldPosition.y, worldPosition.z)
         
-        // Create text geometry
-        let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
-        textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
-        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
-        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.8)
+        // Create and save persistent tweet
+        savePersistentTweet(text: text, position: tweetPosition)
         
-        // Create text node
-        let textNode = SCNNode(geometry: textGeometry)
-        textNode.position = tweetPosition
-        
-        // Center the text
-        let (min, max) = textGeometry.boundingBox
-        let dx = Float(max.x - min.x)
-        let dy = Float(max.y - min.y)
-        let dz = Float(max.z - min.z)
-        textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
-        
-        // Make text face the camera
-        textNode.constraints = [SCNBillboardConstraint()]
+        // Create visual node
+        let textNode = createTextNode(text: text, position: tweetPosition)
+        textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node and text
         tweetNodes.append(textNode)
@@ -216,12 +314,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Add to scene
         sceneView.scene.rootNode.addChildNode(textNode)
-        
-        // Add some animation
-        textNode.scale = SCNVector3(0, 0, 0)
-        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
-        scaleAction.timingMode = .easeOut
-        textNode.runAction(scaleAction)
     }
     
     func createTweet(text: String) {
@@ -239,25 +331,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             cameraPosition.z + (dir.z * 0.5)
         )
         
-        // Create text geometry
-        let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
-        textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
-        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
-        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.8)
+        // Create and save persistent tweet
+        savePersistentTweet(text: text, position: tweetPosition)
         
-        // Create text node
-        let textNode = SCNNode(geometry: textGeometry)
-        textNode.position = tweetPosition
-        
-        // Center the text
-        let (min, max) = textGeometry.boundingBox
-        let dx = Float(max.x - min.x)
-        let dy = Float(max.y - min.y)
-        let dz = Float(max.z - min.z)
-        textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
-        
-        // Make text face the camera
-        textNode.constraints = [SCNBillboardConstraint()]
+        // Create visual node
+        let textNode = createTextNode(text: text, position: tweetPosition)
+        textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node and text
         tweetNodes.append(textNode)
@@ -265,12 +344,39 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Add to scene
         sceneView.scene.rootNode.addChildNode(textNode)
+    }
+    
+    func savePersistentTweet(text: String, position: SCNVector3) {
+        guard let userId = currentUserId,
+              let location = locationManager.currentLocation else {
+            print("Cannot save tweet: missing user ID or location")
+            return
+        }
         
-        // Add some animation
-        textNode.scale = SCNVector3(0, 0, 0)
-        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
-        scaleAction.timingMode = .easeOut
-        textNode.runAction(scaleAction)
+        let tweet = PersistentTweet(
+            id: UUID().uuidString,
+            text: text,
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            altitude: location.altitude,
+            worldPosition: position,
+            userId: userId,
+            timestamp: Date(),
+            isPublic: true
+        )
+        
+        firebaseService.saveTweet(tweet) { [weak self] error in
+            if let error = error {
+                print("Error saving tweet: \(error)")
+                DispatchQueue.main.async {
+                    let alert = UIAlertController(title: "Error", message: "Failed to save tweet. Please try again.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(alert, animated: true)
+                }
+            } else {
+                print("Tweet saved successfully")
+            }
+        }
     }
     
     @objc func historyButtonTapped() {
