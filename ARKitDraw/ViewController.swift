@@ -10,6 +10,7 @@ import UIKit
 import SceneKit
 import ARKit
 import CoreLocation
+import MapKit
 
 class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource {
 
@@ -35,6 +36,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var locationManager: LocationManager!
     private var nearbyTweets: [PersistentTweet] = []
     private var currentUserId: String?
+    
+    // Mini-map
+    private var miniMapView: MiniMapView!
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -145,6 +149,24 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             historyTableView.widthAnchor.constraint(equalToConstant: 250),
             historyTableView.heightAnchor.constraint(equalToConstant: 200)
         ])
+        
+        // Setup mini-map
+        setupMiniMap()
+    }
+    
+    func setupMiniMap() {
+        // Create mini-map view
+        miniMapView = MiniMapView(frame: CGRect(x: 0, y: 0, width: 160, height: 160))
+        miniMapView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(miniMapView)
+        
+        // Position mini-map at bottom-right corner
+        NSLayoutConstraint.activate([
+            miniMapView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            miniMapView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            miniMapView.widthAnchor.constraint(equalToConstant: 160),
+            miniMapView.heightAnchor.constraint(equalToConstant: 160)
+        ])
     }
     
     func setupServices() {
@@ -175,6 +197,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func onLocationUpdated(_ location: CLLocation) {
+        // Update mini-map with user location
+        miniMapView?.updateUserLocation(location)
+        
         // Load nearby tweets when location changes
         loadNearbyTweets(location: location)
     }
@@ -213,6 +238,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
         
         nearbyTweets = tweets
+        
+        // Update mini-map with nearby tweets
+        miniMapView?.updateNearbyTweets(tweets)
     }
     
     func createTextNode(text: String, position: SCNVector3) -> SCNNode {
