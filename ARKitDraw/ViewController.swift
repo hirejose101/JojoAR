@@ -12,7 +12,7 @@ import ARKit
 import CoreLocation
 import MapKit
 
-class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource {
+class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource, MiniMapSearchDelegate {
 
     @IBOutlet var sceneView: ARSCNView!
     @IBOutlet weak var button: UIButton!
@@ -39,6 +39,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     // Mini-map
     private var miniMapView: MiniMapView!
+    
+    // Add these properties to prevent duplicate tweet rendering
+    private var renderedNearbyTweetIds: Set<String> = []
+    private var lastNearbyTweetsUpdate: Date?
+    private let nearbyTweetsUpdateCooldown: TimeInterval = 3.0 // 3 seconds cooldown
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -97,15 +102,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func setupUI() {
         // Configure text field
         textField.placeholder = "Enter your tweet..."
-        textField.borderStyle = .roundedRect
-        textField.backgroundColor = UIColor.white.withAlphaComponent(0.9)
-        textField.textColor = UIColor.black
+        textField.borderStyle = .none
+        textField.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        textField.textColor = UIColor.systemGreen
+        textField.layer.cornerRadius = 12
+        textField.layer.borderWidth = 2
+        textField.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.6).cgColor
+        textField.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        textField.attributedPlaceholder = NSAttributedString(
+            string: "Enter your tweet...",
+            attributes: [NSAttributedString.Key.foregroundColor: UIColor.systemGreen.withAlphaComponent(0.5)]
+        )
         
         // Configure button
         button.setTitle("Enter", for: .normal)
-        button.backgroundColor = UIColor.systemBlue
-        button.setTitleColor(UIColor.white, for: .normal)
-        button.layer.cornerRadius = 8
+        button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        button.setTitleColor(UIColor.black, for: .normal)
+        button.layer.cornerRadius = 12
+        button.layer.shadowColor = UIColor.systemGreen.cgColor
+        button.layer.shadowOffset = CGSize(width: 0, height: 4)
+        button.layer.shadowRadius = 8
+        button.layer.shadowOpacity = 0.6
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
         
         // Add button action
         button.addTarget(self, action: #selector(enterButtonTapped), for: .touchUpInside)
@@ -114,17 +132,23 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyButton = UIButton(type: .system)
         historyButton.setTitle("📝", for: .normal)
         historyButton.titleLabel?.font = UIFont.systemFont(ofSize: 24)
-        historyButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        historyButton.setTitleColor(UIColor.white, for: .normal)
+        historyButton.backgroundColor = UIColor.black.withAlphaComponent(0.9)
+        historyButton.setTitleColor(UIColor.systemGreen, for: .normal)
         historyButton.layer.cornerRadius = 25
         historyButton.layer.masksToBounds = true
+        historyButton.layer.borderWidth = 2
+        historyButton.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.8).cgColor
+        historyButton.layer.shadowColor = UIColor.systemGreen.cgColor
+        historyButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        historyButton.layer.shadowRadius = 8
+        historyButton.layer.shadowOpacity = 0.6
         historyButton.translatesAutoresizingMaskIntoConstraints = false
         historyButton.addTarget(self, action: #selector(historyButtonTapped), for: .touchUpInside)
         view.addSubview(historyButton)
         
         // Position history button at top-left
         NSLayoutConstraint.activate([
-            historyButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            historyButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 80),
             historyButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
             historyButton.widthAnchor.constraint(equalToConstant: 50),
             historyButton.heightAnchor.constraint(equalToConstant: 50)
@@ -132,9 +156,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Add history table view (initially hidden)
         historyTableView = UITableView()
-        historyTableView.backgroundColor = UIColor.black.withAlphaComponent(0.8)
-        historyTableView.layer.cornerRadius = 10
+        historyTableView.backgroundColor = UIColor.black.withAlphaComponent(0.95)
+        historyTableView.layer.cornerRadius = 15
         historyTableView.layer.masksToBounds = true
+        historyTableView.layer.borderWidth = 2
+        historyTableView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.6).cgColor
+        historyTableView.separatorStyle = .none
         historyTableView.delegate = self
         historyTableView.dataSource = self
         historyTableView.register(UITableViewCell.self, forCellReuseIdentifier: "TweetCell")
@@ -158,6 +185,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create mini-map view
         miniMapView = MiniMapView(frame: CGRect(x: 0, y: 0, width: 160, height: 160))
         miniMapView.translatesAutoresizingMaskIntoConstraints = false
+        miniMapView.setSearchDelegate(self)
         view.addSubview(miniMapView)
         
         // Position mini-map at bottom-right corner
@@ -205,6 +233,19 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func loadNearbyTweets(location: CLLocation) {
+        // Check cooldown to prevent excessive API calls when moving
+        if let lastUpdate = lastNearbyTweetsUpdate,
+           Date().timeIntervalSince(lastUpdate) < nearbyTweetsUpdateCooldown {
+            return
+        }
+        
+        // Don't auto-load tweets if we're in search mode (user manually searched an area)
+        // This prevents search results from being cleared by location updates
+        if !renderedNearbyTweetIds.isEmpty {
+            print("🔄 Skipping auto-load - user has searched tweets visible")
+            return
+        }
+        
         firebaseService.fetchNearbyTweets(location: location, radius: 100) { [weak self] tweets, error in
             if let error = error {
                 print("Error loading nearby tweets: \(error)")
@@ -213,20 +254,44 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             DispatchQueue.main.async {
                 self?.renderNearbyTweets(tweets)
+                self?.lastNearbyTweetsUpdate = Date()
             }
         }
     }
     
     func renderNearbyTweets(_ tweets: [PersistentTweet]) {
-        // Remove existing nearby tweet nodes
-        for node in sceneView.scene.rootNode.childNodes {
-            if node.name?.hasPrefix("nearby_tweet_") == true {
-                node.removeFromParentNode()
+        // Filter out tweets that are too far away (safety check)
+        let currentLocation = locationManager.currentLocation
+        let filteredTweets = tweets.filter { tweet in
+            guard let currentLoc = currentLocation else { return true }
+            
+            let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
+            let distance = currentLoc.distance(from: tweetLocation)
+            
+            // Only show tweets within 5km (5000m) as a reasonable limit
+            let isWithinReasonableDistance = distance <= 5000
+            
+            if !isWithinReasonableDistance {
+                print("⚠️ Filtered out distant tweet: '\(tweet.text)' at \(Int(distance))m away")
+            }
+            
+            return isWithinReasonableDistance
+        }
+        
+        print("🔍 Filtered \(tweets.count) tweets down to \(filteredTweets.count) within reasonable distance")
+        
+        // Only render tweets that haven't been rendered before
+        var newTweets: [PersistentTweet] = []
+        
+        for tweet in filteredTweets {
+            if !renderedNearbyTweetIds.contains(tweet.id) {
+                newTweets.append(tweet)
+                renderedNearbyTweetIds.insert(tweet.id)
             }
         }
         
-        // Render new tweets
-        for tweet in tweets {
+        // Only create nodes for new tweets
+        for tweet in newTweets {
             let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
@@ -237,18 +302,141 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             sceneView.scene.rootNode.addChildNode(textNode)
         }
         
-        nearbyTweets = tweets
+        nearbyTweets = filteredTweets
         
         // Update mini-map with nearby tweets
+        miniMapView?.updateNearbyTweets(filteredTweets)
+        
+        // Debug info
+        if newTweets.count > 0 {
+            print("✨ Rendered \(newTweets.count) new nearby tweets (total rendered: \(renderedNearbyTweetIds.count))")
+        }
+    }
+    
+    // MARK: - MiniMapSearchDelegate
+    
+    func searchForTweetsInArea(center: CLLocationCoordinate2D, visibleRegion: MKCoordinateRegion) {
+        // If this is a revert to original location (empty region), clear cache and reload original tweets
+        if visibleRegion.span.latitudeDelta == 0 && visibleRegion.span.longitudeDelta == 0 {
+            print("🔄 Reverting to original location tweets")
+            clearRenderedTweetsCache()
+            
+            // Reload tweets for original location
+            if let currentLocation = locationManager.currentLocation {
+                loadNearbyTweets(location: currentLocation)
+            }
+            return
+        }
+        
+        // Check if the search area is too far from user's current location
+        if let currentLocation = locationManager.currentLocation {
+            let searchLocation = CLLocation(latitude: center.latitude, longitude: center.longitude)
+            let distanceFromUser = currentLocation.distance(from: searchLocation)
+            
+            print("🔍 Search area is \(Int(distanceFromUser))m from user's current location")
+        }
+        
+        // Search for tweets in the new area
+        print("🔍 ===== SEARCH REQUEST =====")
+        print("🔍 Search center: \(center.latitude), \(center.longitude)")
+        print("🔍 Visible region span: lat=\(visibleRegion.span.latitudeDelta), lon=\(visibleRegion.span.longitudeDelta)")
+        
+        // Create a location from the center coordinate
+        let searchLocation = CLLocation(latitude: center.latitude, longitude: center.longitude)
+        
+        // Calculate search radius based on visible region (use the larger span)
+        let latSpan = visibleRegion.span.latitudeDelta
+        let lonSpan = visibleRegion.span.longitudeDelta
+        let searchRadius = max(latSpan, lonSpan) * 111000 / 2 // Convert degrees to meters, use half span as radius
+        
+        // Cap the search radius to reasonable limits (max 2000m for better coverage)
+        let cappedRadius = min(searchRadius, 2000.0)
+        
+        print("🔍 Calculated search radius: \(Int(searchRadius))m")
+        print("🔍 Capped search radius: \(Int(cappedRadius))m")
+        print("🔍 Search location: \(searchLocation.coordinate.latitude), \(searchLocation.coordinate.longitude)")
+        
+        // Fetch tweets for the new area
+        firebaseService.fetchNearbyTweets(location: searchLocation, radius: cappedRadius) { [weak self] tweets, error in
+            if let error = error {
+                print("❌ Error searching tweets in new area: \(error)")
+                return
+            }
+            
+            print("🔍 Firebase returned \(tweets.count) tweets")
+            
+            // Log the first few tweets for debugging
+            for (index, tweet) in tweets.prefix(3).enumerated() {
+                print("🔍 Tweet \(index + 1): '\(tweet.text)' at \(tweet.latitude), \(tweet.longitude)")
+            }
+            
+            DispatchQueue.main.async {
+                self?.renderTweetsForNewArea(tweets)
+            }
+        }
+    }
+    
+    private func renderTweetsForNewArea(_ tweets: [PersistentTweet]) {
+        // For searched areas, show ALL tweets in that area (not just new ones)
+        // This gives users a complete view of what's available
+        
+        // Remove existing tweets from the searched area to avoid duplicates
+        let searchedTweetIds = Set(tweets.map { $0.id })
+        
+        // Remove existing nodes for tweets in this area
+        for node in sceneView.scene.rootNode.childNodes {
+            if let nodeName = node.name,
+               nodeName.hasPrefix("nearby_tweet_"),
+               let tweetId = nodeName.replacingOccurrences(of: "nearby_tweet_", with: "").isEmpty ? nil : nodeName.replacingOccurrences(of: "nearby_tweet_", with: ""),
+               searchedTweetIds.contains(tweetId) {
+                node.removeFromParentNode()
+            }
+        }
+        
+        // Clear these IDs from rendered set since we're re-rendering them
+        for tweetId in searchedTweetIds {
+            renderedNearbyTweetIds.remove(tweetId)
+        }
+        
+        // Render all tweets in the searched area (regardless of previous rendering)
+        for tweet in tweets {
+            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
+            textNode.name = "nearby_tweet_\(tweet.id)"
+            
+            // Add different styling for searched tweets (green to distinguish from nearby)
+            textNode.geometry?.firstMaterial?.diffuse.contents = UIColor.systemGreen
+            textNode.geometry?.firstMaterial?.emission.contents = UIColor.systemGreen.withAlphaComponent(0.6)
+            
+            sceneView.scene.rootNode.addChildNode(textNode)
+            
+            // Mark as rendered
+            renderedNearbyTweetIds.insert(tweet.id)
+        }
+        
+        print("🔍 Rendered \(tweets.count) tweets in searched area (total rendered: \(renderedNearbyTweetIds.count))")
+        
+        // Update mini-map with the searched tweets
+        print("🗺️ Updating mini-map with \(tweets.count) searched tweets")
         miniMapView?.updateNearbyTweets(tweets)
+        print("🗺️ Mini-map update completed")
+        
+        // Also update the nearbyTweets array to keep it in sync
+        nearbyTweets = tweets
+        print("📱 Updated nearbyTweets array with \(tweets.count) tweets")
+    }
+    
+    // Helper function to clear rendered tweets cache (useful for testing)
+    func clearRenderedTweetsCache() {
+        renderedNearbyTweetIds.removeAll()
+        print("🧹 Cleared rendered tweets cache")
     }
     
     func createTextNode(text: String, position: SCNVector3) -> SCNNode {
         // Create text geometry
         let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
         textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
-        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
-        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.8)
+        textGeometry.firstMaterial?.diffuse.contents = UIColor.systemGreen
+        textGeometry.firstMaterial?.emission.contents = UIColor.systemGreen.withAlphaComponent(0.8)
         
         // Create text node
         let textNode = SCNNode(geometry: textGeometry)
@@ -312,7 +500,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Reset button
         button.setTitle("Enter", for: .normal)
-        button.backgroundColor = UIColor.systemBlue
+        button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
     }
     
     func createTweetAtLocation(text: String, location: CGPoint) {
@@ -454,9 +642,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath)
         cell.textLabel?.text = tweetTexts[indexPath.row]
-        cell.textLabel?.textColor = UIColor.white
+        cell.textLabel?.textColor = UIColor.systemGreen
+        cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
         cell.backgroundColor = UIColor.clear
         cell.selectionStyle = .none
+        
+        // Style the cell background
+        let backgroundView = UIView()
+        backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        backgroundView.layer.cornerRadius = 8
+        backgroundView.layer.borderWidth = 1
+        backgroundView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.3).cgColor
+        cell.backgroundView = backgroundView
         
         // Add delete button to cell
         let deleteButton = UIButton(type: .system)
@@ -494,3 +691,4 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Reset tracking and/or remove existing anchors if consistent tracking is required
     }
 }
+

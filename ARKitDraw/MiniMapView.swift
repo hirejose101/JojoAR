@@ -2,6 +2,11 @@ import UIKit
 import MapKit
 import CoreLocation
 
+// Protocol for search communication
+protocol MiniMapSearchDelegate: AnyObject {
+    func searchForTweetsInArea(center: CLLocationCoordinate2D, visibleRegion: MKCoordinateRegion)
+}
+
 class MiniMapView: UIView {
     
     // MARK: - Properties
@@ -15,6 +20,12 @@ class MiniMapView: UIView {
     private var fullScreenMapView: MKMapView?
     private var fullScreenContainer: UIView?
     private var isFullScreen = false
+    
+    // Add properties for search functionality
+    private var originalUserLocation: CLLocationCoordinate2D?
+    private var searchButton: UIButton?
+    private var searchInProgress = false
+    private var searchDelegate: MiniMapSearchDelegate?
     
     // MARK: - Initialization
     override init(frame: CGRect) {
@@ -72,6 +83,11 @@ class MiniMapView: UIView {
     func updateUserLocation(_ location: CLLocation) {
         let coordinate = location.coordinate
         
+        // Store original location for distance calculations
+        if originalUserLocation == nil {
+            originalUserLocation = coordinate
+        }
+        
         // Remove existing user annotation
         if let existingAnnotation = userAnnotation {
             mapView.removeAnnotation(existingAnnotation)
@@ -93,20 +109,55 @@ class MiniMapView: UIView {
     }
     
     func updateNearbyTweets(_ tweets: [PersistentTweet]) {
+        print("🗺️ MiniMapView: updateNearbyTweets called with \(tweets.count) tweets")
+        
         // Remove existing tweet annotations
         for annotation in tweetAnnotations.values {
             mapView.removeAnnotation(annotation)
         }
         tweetAnnotations.removeAll()
         
+        print("🗺️ MiniMapView: Cleared existing annotations")
+        
         // Add new tweet annotations (blue)
-        for tweet in tweets {
+        for (index, tweet) in tweets.enumerated() {
             let annotation = MKPointAnnotation()
             annotation.coordinate = CLLocationCoordinate2D(latitude: tweet.latitude, longitude: tweet.longitude)
             annotation.title = tweet.text
             mapView.addAnnotation(annotation)
             tweetAnnotations[tweet.id] = annotation
+            
+            print("🗺️ MiniMapView: Added annotation \(index + 1) for tweet '\(tweet.text)' at \(tweet.latitude), \(tweet.longitude)")
         }
+        
+        print("🗺️ MiniMapView: Total annotations on mini-map: \(mapView.annotations.count)")
+        
+        // Also update full-screen map if it's open
+        if isFullScreen, let fullScreenMap = fullScreenMapView {
+            print("🗺️ MiniMapView: Updating full-screen map with \(tweets.count) tweets")
+            
+            // Remove existing tweet annotations from full-screen map
+            for annotation in fullScreenMap.annotations {
+                if let title = annotation.title, title != "You" {
+                    fullScreenMap.removeAnnotation(annotation)
+                }
+            }
+            
+            // Add new tweet annotations to full-screen map
+            for tweet in tweets {
+                let annotation = MKPointAnnotation()
+                annotation.coordinate = CLLocationCoordinate2D(latitude: tweet.latitude, longitude: tweet.longitude)
+                annotation.title = tweet.text
+                fullScreenMap.addAnnotation(annotation)
+                print("🗺️ MiniMapView: Added annotation to full-screen map for tweet '\(tweet.text)'")
+            }
+            
+            print("🗺️ MiniMapView: Total annotations on full-screen map: \(fullScreenMap.annotations.count)")
+        }
+    }
+    
+    func setSearchDelegate(_ delegate: MiniMapSearchDelegate) {
+        searchDelegate = delegate
     }
     
     func clearTweets() {
@@ -231,6 +282,26 @@ extension MiniMapView: MKMapViewDelegate {
             fullScreenMapView?.setRegion(region, animated: false)
         }
         
+        // Add search button (initially visible for testing, will be hidden when map moves)
+        searchButton = UIButton(type: .system)
+        searchButton?.setTitle("🔍 Search for posts in this area", for: .normal)
+        searchButton?.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        searchButton?.setTitleColor(UIColor.black, for: .normal)
+        searchButton?.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        searchButton?.layer.cornerRadius = 20
+        searchButton?.frame = CGRect(x: 20, y: 80, width: 250, height: 40) // Moved up and made wider
+        searchButton?.addTarget(self, action: #selector(searchButtonTapped), for: .touchUpInside)
+        searchButton?.isHidden = false // Initially visible for testing
+        searchButton?.layer.zPosition = 1000 // Ensure it's above the map
+        searchButton?.layer.shadowColor = UIColor.systemGreen.cgColor
+        searchButton?.layer.shadowOffset = CGSize(width: 0, height: 4)
+        searchButton?.layer.shadowRadius = 8
+        searchButton?.layer.shadowOpacity = 0.6
+        fullScreenContainer?.addSubview(searchButton!)
+        
+        // Add map movement tracking
+        fullScreenMapView?.addObserver(self, forKeyPath: "region", options: [.new], context: nil)
+        
         // Animate in
         UIView.animate(withDuration: 0.3) {
             self.fullScreenContainer?.alpha = 1
@@ -239,13 +310,71 @@ extension MiniMapView: MKMapViewDelegate {
         isFullScreen = true
     }
     
+    @objc private func searchButtonTapped() {
+        guard let mapView = fullScreenMapView,
+              !searchInProgress else { return }
+        
+        let center = mapView.centerCoordinate
+        searchInProgress = true
+        
+        // Show loading state
+        searchButton?.setTitle("🔍 Searching...", for: .normal)
+        searchButton?.isEnabled = false
+        
+        // Get the visible region
+        let visibleRegion = mapView.region
+        
+        // Call delegate to search for tweets
+        searchDelegate?.searchForTweetsInArea(center: center, visibleRegion: visibleRegion)
+        
+        // Reset button after a delay (delegate will handle the actual search)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.searchButton?.setTitle("🔍 Search for posts in this area", for: .normal)
+            self?.searchButton?.isEnabled = true
+            self?.searchButton?.isUserInteractionEnabled = true
+            self?.searchInProgress = false
+        }
+    }
+    
+    // Handle map movement to show/hide search button
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == "region", let mapView = fullScreenMapView, let originalLocation = originalUserLocation {
+            let currentCenter = mapView.centerCoordinate
+            let distance = calculateDistance(from: originalLocation, to: currentCenter)
+            
+            print("🗺️ Map moved - Distance from original: \(Int(distance))m")
+            
+            // Show search button when moved beyond 200 meters
+            let shouldShowButton = distance >= 200
+            searchButton?.isHidden = !shouldShowButton
+            
+            print("🔍 Search button visibility: \(shouldShowButton ? "SHOWN" : "HIDDEN")")
+        }
+    }
+    
+    private func calculateDistance(from coord1: CLLocationCoordinate2D, to coord2: CLLocationCoordinate2D) -> CLLocationDistance {
+        let location1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+        let location2 = CLLocation(latitude: coord2.latitude, longitude: coord2.longitude)
+        return location1.distance(from: location2)
+    }
+    
     @objc private func hideFullScreenMap() {
+        // Remove observer
+        fullScreenMapView?.removeObserver(self, forKeyPath: "region")
+        
+        // Notify delegate to revert to original location tweets
+        if let originalLocation = originalUserLocation {
+            let originalCLLocation = CLLocation(latitude: originalLocation.latitude, longitude: originalLocation.longitude)
+            searchDelegate?.searchForTweetsInArea(center: originalLocation, visibleRegion: MKCoordinateRegion())
+        }
+        
         UIView.animate(withDuration: 0.3, animations: {
             self.fullScreenContainer?.alpha = 0
         }) { _ in
             self.fullScreenContainer?.removeFromSuperview()
             self.fullScreenContainer = nil
             self.fullScreenMapView = nil
+            self.searchButton = nil
             self.isFullScreen = false
         }
     }

@@ -57,6 +57,8 @@ class FirebaseService {
     }
     
     func fetchNearbyTweets(location: CLLocation, radius: Double, completion: @escaping ([PersistentTweet], Error?) -> Void) {
+        print("🔥 Firebase: Searching for tweets near \(location.coordinate.latitude), \(location.coordinate.longitude) with radius \(Int(radius))m")
+        
         // Calculate bounding box for the radius
         let latDelta = radius / 111000.0 // Approximate meters per degree latitude
         let lonDelta = radius / (111000.0 * cos(location.coordinate.latitude * .pi / 180))
@@ -66,6 +68,8 @@ class FirebaseService {
         let minLon = location.coordinate.longitude - lonDelta
         let maxLon = location.coordinate.longitude + lonDelta
         
+        print("🔥 Firebase: Bounding box - Lat: \(minLat) to \(maxLat), Lon: \(minLon) to \(maxLon)")
+        
         let query = db.collection(tweetsCollection)
             .whereField("latitude", isGreaterThan: minLat)
             .whereField("latitude", isLessThan: maxLat)
@@ -73,16 +77,22 @@ class FirebaseService {
             .whereField("longitude", isLessThan: maxLon)
             .whereField("isPublic", isEqualTo: true)
         
+        print("🔥 Firebase: Executing query...")
+        
         query.getDocuments { snapshot, error in
             if let error = error {
+                print("❌ Firebase error: \(error)")
                 completion([], error)
                 return
             }
             
             guard let documents = snapshot?.documents else {
+                print("🔥 Firebase: No documents returned")
                 completion([], nil)
                 return
             }
+            
+            print("🔥 Firebase: Found \(documents.count) documents in bounding box")
             
             let tweets = documents.compactMap { document -> PersistentTweet? in
                 let data = document.data()
@@ -97,6 +107,7 @@ class FirebaseService {
                       let userId = data["userId"] as? String,
                       let timestamp = data["timestamp"] as? Timestamp,
                       let isPublic = data["isPublic"] as? Bool else {
+                    print("🔥 Firebase: Failed to parse document \(document.documentID)")
                     return nil
                 }
                 
@@ -116,13 +127,83 @@ class FirebaseService {
                 )
             }
             
+            print("🔥 Firebase: Successfully parsed \(tweets.count) tweets")
+            
             // Filter by actual distance and sort by timestamp
             let nearbyTweets = tweets.filter { tweet in
                 let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
-                return location.distance(from: tweetLocation) <= radius
+                let distance = location.distance(from: tweetLocation)
+                return distance <= radius
             }.sorted { $0.timestamp > $1.timestamp }
             
+            print("🔥 Firebase: After distance filtering: \(nearbyTweets.count) tweets within \(Int(radius))m")
+            
             completion(nearbyTweets, nil)
+        }
+    }
+    
+    // Debug method to fetch all tweets (for testing)
+    func fetchAllTweets(completion: @escaping ([PersistentTweet], Error?) -> Void) {
+        print("🔥 Firebase: Fetching ALL tweets for debugging...")
+        
+        let query = db.collection(tweetsCollection)
+        
+        query.getDocuments { snapshot, error in
+            if let error = error {
+                print("❌ Firebase error fetching all tweets: \(error)")
+                completion([], error)
+                return
+            }
+            
+            guard let documents = snapshot?.documents else {
+                print("🔥 Firebase: No documents found")
+                completion([], nil)
+                return
+            }
+            
+            print("🔥 Firebase: Found \(documents.count) total documents")
+            
+            let tweets = documents.compactMap { document -> PersistentTweet? in
+                let data = document.data()
+                
+                guard let id = data["id"] as? String,
+                      let text = data["text"] as? String,
+                      let latitude = data["latitude"] as? Double,
+                      let longitude = data["longitude"] as? Double,
+                      let worldPositionX = data["worldPositionX"] as? Float,
+                      let worldPositionY = data["worldPositionY"] as? Float,
+                      let worldPositionZ = data["worldPositionZ"] as? Float,
+                      let userId = data["userId"] as? String,
+                      let timestamp = data["timestamp"] as? Timestamp,
+                      let isPublic = data["isPublic"] as? Bool else {
+                    print("🔥 Firebase: Failed to parse document \(document.documentID): \(data)")
+                    return nil
+                }
+                
+                let altitude = data["altitude"] as? Double
+                let worldPosition = SCNVector3(worldPositionX, worldPositionY, worldPositionZ)
+                
+                return PersistentTweet(
+                    id: id,
+                    text: text,
+                    latitude: latitude,
+                    longitude: longitude,
+                    altitude: altitude,
+                    worldPosition: worldPosition,
+                    userId: userId,
+                    timestamp: timestamp.dateValue(),
+                    isPublic: isPublic
+                )
+            }
+            
+            print("🔥 Firebase: Successfully parsed \(tweets.count) total tweets")
+            
+            // Log all tweets for debugging
+            for (index, tweet) in tweets.enumerated() {
+                print("🔥 Firebase: Tweet \(index + 1): '\(tweet.text)' at \(tweet.latitude), \(tweet.longitude) (public: \(tweet.isPublic))")
+            }
+            
+            completion(tweets, nil)
         }
     }
     
