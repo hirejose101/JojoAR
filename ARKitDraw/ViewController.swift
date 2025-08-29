@@ -54,8 +54,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Set text field delegate
         textField.delegate = self
         
-        // Show statistics such as fps and timing information
-        sceneView.showsStatistics = true
+        // Hide statistics for cleaner interface
+        sceneView.showsStatistics = false
         
         // Create a new scene
         let scene = SCNScene(named: "art.scnassets/world.scn")!
@@ -72,6 +72,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Add tap gesture recognizer
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         sceneView.addGestureRecognizer(tapGesture)
+        
+        // Refresh all existing tweets with new iMessage design after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.refreshAllExistingTweets()
+        }
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -101,23 +106,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func setupUI() {
         // Configure text field
-        textField.placeholder = "Enter your tweet..."
+        textField.placeholder = "What's your thought here?"
         textField.borderStyle = .none
-        textField.backgroundColor = UIColor.black.withAlphaComponent(0.8)
-        textField.textColor = UIColor.systemGreen
+        textField.backgroundColor = UIColor.white
+        textField.textColor = UIColor.black
         textField.layer.cornerRadius = 12
-        textField.layer.borderWidth = 2
-        textField.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.6).cgColor
+        textField.layer.borderWidth = 1
+        textField.layer.borderColor = UIColor.systemGray4.cgColor
         textField.font = UIFont.systemFont(ofSize: 16, weight: .medium)
         textField.attributedPlaceholder = NSAttributedString(
-            string: "Enter your tweet...",
-            attributes: [NSAttributedString.Key.foregroundColor: UIColor.systemGreen.withAlphaComponent(0.5)]
+            string: "What's your thought here?",
+            attributes: [NSAttributedString.Key.foregroundColor: UIColor.systemGray]
         )
+        
+        // Add padding to prevent text from touching borders
+        let paddingView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: textField.frame.height))
+        textField.leftView = paddingView
+        textField.leftViewMode = .always
         
         // Configure button
         button.setTitle("Enter", for: .normal)
         button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
-        button.setTitleColor(UIColor.black, for: .normal)
+        button.setTitleColor(UIColor.white, for: .normal)
         button.layer.cornerRadius = 12
         button.layer.shadowColor = UIColor.systemGreen.cgColor
         button.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -130,10 +140,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Add tweet history button
         historyButton = UIButton(type: .system)
-        historyButton.setTitle("📝", for: .normal)
-        historyButton.titleLabel?.font = UIFont.systemFont(ofSize: 24)
-        historyButton.backgroundColor = UIColor.black.withAlphaComponent(0.9)
-        historyButton.setTitleColor(UIColor.systemGreen, for: .normal)
+        historyButton.setImage(UIImage(systemName: "person.fill"), for: .normal)
+        historyButton.tintColor = UIColor.white
+        historyButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
         historyButton.layer.cornerRadius = 25
         historyButton.layer.masksToBounds = true
         historyButton.layer.borderWidth = 2
@@ -144,12 +153,17 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyButton.layer.shadowOpacity = 0.6
         historyButton.translatesAutoresizingMaskIntoConstraints = false
         historyButton.addTarget(self, action: #selector(historyButtonTapped), for: .touchUpInside)
+        
+        // Configure icon size and appearance
+        historyButton.imageView?.contentMode = .scaleAspectFit
+        historyButton.imageEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        
         view.addSubview(historyButton)
         
-        // Position history button at top-left
+        // Position history button aligned with text field
         NSLayoutConstraint.activate([
             historyButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 80),
-            historyButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            historyButton.leadingAnchor.constraint(equalTo: textField.leadingAnchor),
             historyButton.widthAnchor.constraint(equalToConstant: 50),
             historyButton.heightAnchor.constraint(equalToConstant: 50)
         ])
@@ -295,9 +309,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
-            // Add different styling for nearby tweets
-            textNode.geometry?.firstMaterial?.diffuse.contents = UIColor.systemBlue
-            textNode.geometry?.firstMaterial?.emission.contents = UIColor.systemBlue.withAlphaComponent(0.6)
+            // All tweets use the same green iMessage style with white text
+            // No color variations needed - consistent design throughout
             
             sceneView.scene.rootNode.addChildNode(textNode)
         }
@@ -398,14 +411,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             renderedNearbyTweetIds.remove(tweetId)
         }
         
-        // Render all tweets in the searched area (regardless of previous rendering)
+        // Create nodes for new tweets (keep existing ones)
         for tweet in tweets {
             let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
-            // Add different styling for searched tweets (green to distinguish from nearby)
-            textNode.geometry?.firstMaterial?.diffuse.contents = UIColor.systemGreen
-            textNode.geometry?.firstMaterial?.emission.contents = UIColor.systemGreen.withAlphaComponent(0.6)
+            // All tweets use the same green iMessage style with white text
+            // No color variations needed - consistent design throughout
             
             sceneView.scene.rootNode.addChildNode(textNode)
             
@@ -432,24 +444,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func createTextNode(text: String, position: SCNVector3) -> SCNNode {
-        // Create text geometry
-        let textGeometry = SCNText(string: text, extrusionDepth: 0.1)
-        textGeometry.font = UIFont.boldSystemFont(ofSize: 0.3)
-        textGeometry.firstMaterial?.diffuse.contents = UIColor.systemGreen
-        textGeometry.firstMaterial?.emission.contents = UIColor.systemGreen.withAlphaComponent(0.8)
+        // Create the text geometry
+        let textGeometry = SCNText(string: text, extrusionDepth: 0.01)
+        textGeometry.font = UIFont.systemFont(ofSize: 0.2, weight: .medium)
+        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
+        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.3)
         
         // Create text node
         let textNode = SCNNode(geometry: textGeometry)
-        textNode.position = position
         
-        // Center the text
+        // Center the text using proper pivot
         let (min, max) = textGeometry.boundingBox
         let dx = Float(max.x - min.x)
         let dy = Float(max.y - min.y)
         let dz = Float(max.z - min.z)
+        
+        // Set the pivot to center the text geometry
         textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
         
-        // Make text face the camera
+        // Position the text at the specified world position
+        textNode.position = position
+        
+        // Make the text face the camera
         textNode.constraints = [SCNBillboardConstraint()]
         
         // Add some animation
@@ -501,6 +517,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Reset button
         button.setTitle("Enter", for: .normal)
         button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        button.setTitleColor(UIColor.white, for: .normal)
     }
     
     func createTweetAtLocation(text: String, location: CGPoint) {
@@ -689,6 +706,59 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func sessionInterruptionEnded(_ session: ARSession) {
         // Reset tracking and/or remove existing anchors if consistent tracking is required
+    }
+    
+    // Function to refresh all existing tweet nodes with the new iMessage bubble design
+    func refreshAllExistingTweets() {
+        // Get all existing tweet nodes
+        let existingTweetNodes = sceneView.scene.rootNode.childNodes.filter { node in
+            if let nodeName = node.name {
+                return nodeName.hasPrefix("my_tweet_") || nodeName.hasPrefix("nearby_tweet_")
+            }
+            return false
+        }
+        
+        for node in existingTweetNodes {
+            // Find the corresponding tweet text
+            if let nodeName = node.name {
+                // Extract the tweet ID from the node name
+                let tweetId = nodeName.replacingOccurrences(of: "my_tweet_", with: "")
+                    .replacingOccurrences(of: "nearby_tweet_", with: "")
+                
+                // Find the tweet text from our arrays
+                var tweetText = ""
+                if let index = tweetNodes.firstIndex(where: { $0.name == nodeName }) {
+                    tweetText = tweetTexts[index]
+                } else {
+                    // If not in our arrays, try to get from the node's child text
+                    for childNode in node.childNodes {
+                        if let textGeometry = childNode.geometry as? SCNText {
+                            tweetText = textGeometry.string as? String ?? ""
+                            break
+                        }
+                    }
+                }
+                
+                if !tweetText.isEmpty {
+                    // Create a new text node with the updated design
+                    let newTextNode = createTextNode(text: tweetText, position: node.position)
+                    newTextNode.name = nodeName // Keep the original name
+                    
+                    // Remove the old node
+                    node.removeFromParentNode()
+                    
+                    // Add the new node
+                    sceneView.scene.rootNode.addChildNode(newTextNode)
+                    
+                    // Update our arrays if this was a tracked tweet
+                    if let index = tweetNodes.firstIndex(where: { $0.name == nodeName }) {
+                        tweetNodes[index] = newTextNode
+                    }
+                }
+            }
+        }
+        
+        print("✅ All existing tweets refreshed with new iMessage bubble design.")
     }
 }
 
