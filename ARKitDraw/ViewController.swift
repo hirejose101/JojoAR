@@ -12,6 +12,182 @@ import ARKit
 import CoreLocation
 import MapKit
 
+// MARK: - GTA Style Text System
+/// Professional GTA-style 3D text with proper stroke and performance optimization
+class GTAText {
+    
+    // MARK: - Shared materials (reuse for perf)
+    enum Style {
+        static let whiteFace: SCNMaterial = {
+            let m = SCNMaterial()
+            m.lightingModel = .physicallyBased
+            m.diffuse.contents = UIColor.white
+            m.metalness.contents = 0.0
+            m.roughness.contents = 0.5
+            m.isDoubleSided = false
+            return m
+        }()
+        static let blackSide: SCNMaterial = {
+            let m = SCNMaterial()
+            m.lightingModel = .physicallyBased
+            m.diffuse.contents = UIColor.black
+            m.metalness.contents = 0.0
+            m.roughness.contents = 0.6
+            m.isDoubleSided = false
+            return m
+        }()
+        static let blackStroke: SCNMaterial = {
+            let m = SCNMaterial()
+            m.lightingModel = .constant
+            m.diffuse.contents = UIColor.black
+            m.emission.contents = UIColor.black
+            m.isDoubleSided = true
+            // Stroke shouldn't write depth (prevents shimmer with main text)
+            m.readsFromDepthBuffer = false
+            m.writesToDepthBuffer = false
+            return m
+        }()
+    }
+    
+    // MARK: - Geometry cache
+    final class TextGeoCache {
+        static var cache: [String: SCNText] = [:]
+        static func geometry(
+            _ text: String,
+            font: UIFont,
+            extrusion: CGFloat,
+            chamfer: CGFloat,
+            flatness: CGFloat
+        ) -> SCNText {
+            let key = "\(text)|\(font.fontName)|\(extrusion)|\(chamfer)|\(flatness)"
+            if let g = cache[key] { return g.copy() as! SCNText }
+            let g = SCNText(string: text, extrusionDepth: extrusion)
+            g.font = font
+            g.chamferRadius = chamfer
+            g.flatness = flatness
+            cache[key] = g
+            return g.copy() as! SCNText
+        }
+    }
+    
+    // MARK: - GTA 3D text node (white face + black stroke)
+    static func createGTATextNode(
+        text: String,
+        font: UIFont = UIFont(name: "AvenirNext-Heavy", size: 0.22) ?? .systemFont(ofSize: 0.22, weight: .heavy),
+        extrusion: CGFloat = 0.06,      // chunky
+        chamfer: CGFloat = 0.004,       // rounded edge
+        flatness: CGFloat = 0.015,      // smooth curves
+        strokeScale: CGFloat = 1.14,    // stroke thickness
+        billboard: Bool = true
+    ) -> SCNNode {
+
+        // Main 3D white text
+        let mainGeo = TextGeoCache.geometry(text, font: font, extrusion: extrusion, chamfer: chamfer, flatness: flatness)
+        mainGeo.materials = [Style.whiteFace, Style.blackSide] // element 0: faces, 1: sides (usual order)
+
+        let mainNode = SCNNode(geometry: mainGeo)
+        centerPivot(mainNode)
+
+        // Black stroke clone (scaled up)
+        let strokeGeo = mainGeo.copy() as! SCNText
+        strokeGeo.materials = [Style.blackStroke]
+        let strokeNode = SCNNode(geometry: strokeGeo)
+        strokeNode.pivot = mainNode.pivot
+        strokeNode.scale = SCNVector3(strokeScale, strokeScale, 1.0)
+        strokeNode.position.z = -0.001    // sit just behind
+        strokeNode.renderingOrder = 5
+
+        // Main in front, writes depth
+        mainNode.renderingOrder = 10
+        mainNode.geometry?.firstMaterial?.readsFromDepthBuffer = true
+        mainNode.geometry?.firstMaterial?.writesToDepthBuffer = true
+
+        // Container (billboarded)
+        let container = SCNNode()
+        container.addChildNode(strokeNode)
+        container.addChildNode(mainNode)
+        if billboard { container.constraints = [SCNBillboardConstraint()] }
+
+        return container
+    }
+    
+    // Helper: center pivot so transforms are around the center
+    private static func centerPivot(_ node: SCNNode) {
+        let (minV, maxV) = node.boundingBox
+        let c = SCNVector3((minV.x+maxV.x)/2, (minV.y+maxV.y)/2, (minV.z+maxV.z)/2)
+        node.pivot = SCNMatrix4MakeTranslation(c.x, c.y, c.z)
+    }
+    /// Creates a thought bubble with neon text inside a rounded bar
+    static func makeThoughtBarNode(text: String) -> SCNNode {
+        let container = SCNNode()
+
+        // --- TEXT (use your GTA-style helper) ---
+        let textNode = GTAText.createGTATextNode(
+            text: text,
+            font: UIFont.systemFont(ofSize: 0.22, weight: .heavy),
+            extrusion: 0.06,                               // Chunky GTA depth
+            chamfer: 0.004,                                // Rounded edges
+            flatness: 0.015,                               // Smooth curves
+            strokeScale: 1.14,                             // Perfect black stroke thickness
+            billboard: false                               // IMPORTANT: billboard only on container
+        )
+
+        // Get text size in local space
+        let (tmin, tmax) = (textNode.geometry as! SCNText).boundingBox
+        let tW = CGFloat(tmax.x - tmin.x)
+        let tH = CGFloat(tmax.y - tmin.y)
+
+        // --- BAR (rounded pill via SpriteKit texture) ---
+        // Pad around the text
+        let padX: CGFloat = max(0.06, tW * 0.25)
+        let padY: CGFloat = max(0.03, tH * 0.6)
+        let barW = tW + padX
+        let barH = max(tH + padY, 0.06)
+
+        let barPlane = SCNPlane(width: barW, height: barH)
+        let sk = SKScene(size: CGSize(width: 800, height: Int(800 * (barH/barW))))
+        sk.backgroundColor = UIColor.clear
+        let rect = CGRect(x: 40, y: 40, width: sk.size.width - 80, height: sk.size.height - 80)
+        let pill = SKShapeNode(rect: rect, cornerRadius: rect.height/2)
+        pill.fillColor = UIColor.white
+        pill.strokeColor = UIColor.clear
+        pill.alpha = 0.85
+        pill.setScale(1.0)
+        sk.addChild(pill)
+
+        let barMat = SCNMaterial()
+        barMat.lightingModel = .constant
+        barMat.diffuse.contents = sk
+        barMat.isDoubleSided = true
+        barPlane.materials = [barMat]
+
+        let barNode = SCNNode(geometry: barPlane)
+
+        // --- ALIGN PIVOTS & POSITIONS ---
+        // Center pivots for both so (0,0,0) is their center
+        func centerPivot(_ node: SCNNode) {
+            let (minV, maxV) = node.boundingBox
+            let c = SCNVector3((minV.x+maxV.x)/2, (minV.y+maxV.y)/2, (minV.z+maxV.z)/2)
+            node.pivot = SCNMatrix4MakeTranslation(c.x, c.y, c.z)
+        }
+        centerPivot(textNode)
+        centerPivot(barNode)
+
+        // Stack them: text slightly in front to avoid z-fighting
+        barNode.position = SCNVector3(0, 0, 0)
+        textNode.position = SCNVector3(0, 0, 0.001)
+
+        // Add to container and billboard the container
+        container.addChildNode(barNode)
+        container.addChildNode(textNode)
+        container.constraints = [SCNBillboardConstraint()]
+
+        // Optional: set a consistent scale; tweak as needed
+        container.scale = SCNVector3(1, 1, 1)
+        return container
+    }
+}
+
 class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource, MiniMapSearchDelegate {
 
     @IBOutlet var sceneView: ARSCNView!
@@ -26,6 +202,35 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var historyButton: UIButton!
     private var historyTableView: UITableView!
     private var isHistoryVisible = false
+    
+    // Color picker elements
+    private var colorPickerButton: UIButton!
+    private var colorPickerView: UIView!
+    private var selectedBorderColor: UIColor {
+        get {
+            // Load saved color from UserDefaults, default to black
+            if let colorData = UserDefaults.standard.data(forKey: "selectedBorderColor") {
+                do {
+                    if let color = try NSKeyedUnarchiver.unarchivedObject(ofClass: UIColor.self, from: colorData) {
+                        return color
+                    }
+                } catch {
+                    print("⚠️ Failed to load border color: \(error)")
+                }
+            }
+            return UIColor.black
+        }
+        set {
+            // Save color to UserDefaults
+            do {
+                let colorData = try NSKeyedArchiver.archivedData(withRootObject: newValue, requiringSecureCoding: false)
+                UserDefaults.standard.set(colorData, forKey: "selectedBorderColor")
+            } catch {
+                print("⚠️ Failed to save border color: \(error)")
+            }
+        }
+    }
+    private var isColorPickerVisible = false
     
     // Tap to place functionality
     private var pendingTweetText: String?
@@ -62,6 +267,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Set the scene to the view
         sceneView.scene = scene
+        
+        // Configure modern lighting for neon effects
+        configureModernLighting(for: scene)
         
         // Setup UI
         setupUI()
@@ -113,7 +321,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         textField.layer.cornerRadius = 12
         textField.layer.borderWidth = 1
         textField.layer.borderColor = UIColor.systemGray4.cgColor
-        textField.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        textField.font = getCustomFont(size: 16)
         textField.attributedPlaceholder = NSAttributedString(
             string: "What's your thought here?",
             attributes: [NSAttributedString.Key.foregroundColor: UIColor.systemGray]
@@ -133,10 +341,32 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         button.layer.shadowOffset = CGSize(width: 0, height: 4)
         button.layer.shadowRadius = 8
         button.layer.shadowOpacity = 0.6
-        button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .bold)
+        button.titleLabel?.font = getCustomFont(size: 18)
         
         // Add button action
         button.addTarget(self, action: #selector(enterButtonTapped), for: .touchUpInside)
+        
+        // Add color picker button (smaller size for text field)
+        colorPickerButton = UIButton(type: .system)
+        colorPickerButton.setTitle("🎨", for: .normal)
+        colorPickerButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
+        colorPickerButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        colorPickerButton.setTitleColor(UIColor.white, for: .normal)
+        colorPickerButton.layer.cornerRadius = 15
+        colorPickerButton.layer.masksToBounds = true
+        colorPickerButton.layer.borderWidth = 1
+        colorPickerButton.layer.borderColor = UIColor.white.cgColor
+        colorPickerButton.addTarget(self, action: #selector(colorPickerButtonTapped), for: .touchUpInside)
+        
+        // Set color picker button as right view of text field with padding
+        let rightViewContainer = UIView(frame: CGRect(x: 0, y: 0, width: 50, height: 40))
+        rightViewContainer.addSubview(colorPickerButton)
+        
+        // Position button with right padding (stays on right end)
+        colorPickerButton.frame = CGRect(x: 20, y: 5, width: 30, height: 30)
+        
+        textField.rightView = rightViewContainer
+        textField.rightViewMode = .always
         
         // Add tweet history button
         historyButton = UIButton(type: .system)
@@ -167,6 +397,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             historyButton.widthAnchor.constraint(equalToConstant: 50),
             historyButton.heightAnchor.constraint(equalToConstant: 50)
         ])
+        
+
         
         // Add history table view (initially hidden)
         historyTableView = UITableView()
@@ -443,23 +675,180 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         print("🧹 Cleared rendered tweets cache")
     }
     
-    func createTextNode(text: String, position: SCNVector3) -> SCNNode {
-        // Create the text geometry
-        let textGeometry = SCNText(string: text, extrusionDepth: 0.01)
-        textGeometry.font = UIFont.systemFont(ofSize: 0.2, weight: .medium)
-        textGeometry.firstMaterial?.diffuse.contents = UIColor.white
-        textGeometry.firstMaterial?.emission.contents = UIColor.white.withAlphaComponent(0.3)
+    // MARK: - Color Picker Methods
+    private func showColorPicker() {
+        if colorPickerView != nil {
+            colorPickerView.removeFromSuperview()
+        }
         
-        // Create text node
+        // Create color picker view
+        colorPickerView = UIView()
+        colorPickerView.backgroundColor = UIColor.black.withAlphaComponent(0.9)
+        colorPickerView.layer.cornerRadius = 12
+        colorPickerView.layer.borderWidth = 2
+        colorPickerView.layer.borderColor = UIColor.systemBlue.cgColor
+        colorPickerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(colorPickerView)
+        
+        // Define colors
+        let colors: [UIColor] = [
+            .black, .white, .red, .orange, .yellow, .green, .blue, .purple,
+            .systemPink, .systemTeal, .systemIndigo, .systemBrown
+        ]
+        
+        let colorNames = [
+            "Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple",
+            "Pink", "Teal", "Indigo", "Brown"
+        ]
+        
+        // Create color buttons
+        for (index, color) in colors.enumerated() {
+            let colorButton = UIButton(type: .system)
+            colorButton.backgroundColor = color
+            colorButton.layer.cornerRadius = 15
+            colorButton.layer.borderWidth = 2
+            colorButton.layer.borderColor = UIColor.white.cgColor
+            colorButton.tag = index
+            colorButton.addTarget(self, action: #selector(colorSelected(_:)), for: .touchUpInside)
+            colorButton.translatesAutoresizingMaskIntoConstraints = false
+            colorPickerView.addSubview(colorButton)
+            
+            // Add color name label
+            let nameLabel = UILabel()
+            nameLabel.text = colorNames[index]
+            nameLabel.textColor = UIColor.white
+            nameLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+            nameLabel.textAlignment = .center
+            nameLabel.translatesAutoresizingMaskIntoConstraints = false
+            colorPickerView.addSubview(nameLabel)
+            
+            // Position color button and label
+            let row = index / 4
+            let col = index % 4
+            
+            NSLayoutConstraint.activate([
+                colorButton.topAnchor.constraint(equalTo: colorPickerView.topAnchor, constant: CGFloat(row * 50) + 20),
+                colorButton.leadingAnchor.constraint(equalTo: colorPickerView.leadingAnchor, constant: CGFloat(col * 60) + 20),
+                colorButton.widthAnchor.constraint(equalToConstant: 30),
+                colorButton.heightAnchor.constraint(equalToConstant: 30),
+                
+                nameLabel.topAnchor.constraint(equalTo: colorButton.bottomAnchor, constant: 5),
+                nameLabel.centerXAnchor.constraint(equalTo: colorButton.centerXAnchor),
+                nameLabel.widthAnchor.constraint(equalToConstant: 50)
+            ])
+        }
+        
+        // Position color picker view below the text field
+        NSLayoutConstraint.activate([
+            colorPickerView.topAnchor.constraint(equalTo: textField.bottomAnchor, constant: 10),
+            colorPickerView.trailingAnchor.constraint(equalTo: textField.trailingAnchor),
+            colorPickerView.widthAnchor.constraint(equalToConstant: 280),
+            colorPickerView.heightAnchor.constraint(equalToConstant: 200)
+        ])
+        
+        isColorPickerVisible = true
+        
+        // Highlight current selection
+        if let currentIndex = colors.firstIndex(of: selectedBorderColor) {
+            if let currentButton = colorPickerView.viewWithTag(currentIndex) as? UIButton {
+                currentButton.layer.borderWidth = 4
+                currentButton.layer.borderColor = UIColor.yellow.cgColor
+            }
+        }
+    }
+    
+    private func hideColorPicker() {
+        colorPickerView?.removeFromSuperview()
+        colorPickerView = nil
+        isColorPickerVisible = false
+    }
+    
+    @objc private func colorSelected(_ sender: UIButton) {
+        let colors: [UIColor] = [
+            .black, .white, .red, .orange, .yellow, .green, .blue, .purple,
+            .systemPink, .systemTeal, .systemIndigo, .systemBrown
+        ]
+        
+        let newColor = colors[sender.tag]
+        selectedBorderColor = newColor
+        
+        // Update color picker button to show selected color
+        colorPickerButton.backgroundColor = newColor
+        colorPickerButton.setTitle("✓", for: .normal)
+        
+        // Hide color picker
+        hideColorPicker()
+        
+        print("🎨 Selected border color: \(newColor) - Saved to UserDefaults")
+    }
+    
+    // Helper function to get custom font with fallback
+    private func getCustomFont(size: CGFloat) -> UIFont {
+        // Try custom fonts in order of preference
+        let customFontNames = [
+            "Baliw",
+            "Baliw-Regular",
+            "Baliw-Bold"
+        ]
+        
+        for fontName in customFontNames {
+            if let customFont = UIFont(name: fontName, size: size) {
+                print("✅ Using custom font: \(fontName)")
+                return customFont
+            }
+        }
+        
+        // Fallback to system font
+        print("⚠️ Custom font not found, using system font")
+        return UIFont.systemFont(ofSize: size, weight: .medium)
+    }
+    
+    // Configure modern lighting for neon effects
+    private func configureModernLighting(for scene: SCNScene) {
+        // Use a neutral HDR or blurred room image you include in your bundle.
+        // Replace "ibl_hdr.jpg" with your asset name.
+        // scene.lightingEnvironment.contents = "ibl_hdr.jpg"
+        // scene.lightingEnvironment.intensity = 1.0
+
+        let lightNode = SCNNode()
+        let light = SCNLight()
+        light.type = .directional
+        light.intensity = 900
+        light.castsShadow = true
+        light.shadowRadius = 8
+        light.shadowColor = UIColor.black.withAlphaComponent(0.4)
+        lightNode.light = light
+        lightNode.eulerAngles = SCNVector3(-Float.pi/3, Float.pi/6, 0)
+        scene.rootNode.addChildNode(lightNode)
+        
+        print("💡 Modern lighting configured for neon effects")
+    }
+    
+    func createTextNode(text: String, position: SCNVector3) -> SCNNode {
+        // Create simple working text first to debug
+        let textGeometry = SCNText(string: text, extrusionDepth: 0.06)
+        textGeometry.font = UIFont.systemFont(ofSize: 0.22, weight: .heavy)
+        textGeometry.flatness = 0.015
+        textGeometry.chamferRadius = 0.004
+        
+        // Simple materials that definitely work
+        let faceMaterial = SCNMaterial()
+        faceMaterial.diffuse.contents = UIColor.white
+        faceMaterial.lightingModel = .constant
+        
+        let sideMaterial = SCNMaterial()
+        sideMaterial.diffuse.contents = selectedBorderColor
+        sideMaterial.lightingModel = .constant
+        
+        textGeometry.materials = [faceMaterial, sideMaterial]
+        
         let textNode = SCNNode(geometry: textGeometry)
         
-        // Center the text using proper pivot
+        // Center the text
         let (min, max) = textGeometry.boundingBox
         let dx = Float(max.x - min.x)
         let dy = Float(max.y - min.y)
         let dz = Float(max.z - min.z)
-        
-        // Set the pivot to center the text geometry
         textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
         
         // Position the text at the specified world position
@@ -660,7 +1049,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath)
         cell.textLabel?.text = tweetTexts[indexPath.row]
         cell.textLabel?.textColor = UIColor.systemGreen
-        cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        cell.textLabel?.font = getCustomFont(size: 16)
         cell.backgroundColor = UIColor.clear
         cell.selectionStyle = .none
         
@@ -687,6 +1076,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     @objc func deleteButtonTapped(_ sender: UIButton) {
         let index = sender.tag
         deleteTweet(at: index)
+    }
+    
+    @objc func colorPickerButtonTapped() {
+        if isColorPickerVisible {
+            hideColorPicker()
+        } else {
+            showColorPicker()
+        }
     }
     
     // MARK: - UITextFieldDelegate
