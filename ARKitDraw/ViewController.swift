@@ -251,8 +251,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var lastNearbyTweetsUpdate: Date?
     private let nearbyTweetsUpdateCooldown: TimeInterval = 3.0 // 3 seconds cooldown
     
-    // Authentication UI
-    private var authButton: UIButton!
+    // Authentication UI - now integrated into history table
+    private var isUserAuthenticated: Bool = false
     private var userInfoLabel: UILabel!
     
     // UI setup flag
@@ -282,15 +282,20 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Configure modern lighting for neon effects
         configureModernLighting(for: scene)
         
-        // Setup authentication UI
-        setupAuthenticationUI()
-        
         // Initialize Firebase and Location services
         setupServices()
         
         // Add tap gesture recognizer
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         sceneView.addGestureRecognizer(tapGesture)
+        
+        // Add notification observer for authentication state changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAuthenticationStateChanged),
+            name: NSNotification.Name("AuthenticationStateChanged"),
+            object: nil
+        )
         
         // Refresh all existing tweets with new iMessage design after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -460,6 +465,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Setup mini-map
         setupMiniMap()
+        
+        // Setup authentication UI after all UI elements are created
+        setupAuthenticationUI()
     }
     
     func setupMiniMap() {
@@ -479,25 +487,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func setupAuthenticationUI() {
-        // Create authentication button
-        authButton = UIButton(type: .system)
-        authButton.setTitle("Sign In", for: .normal)
-        authButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
-        authButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
-        authButton.setTitleColor(UIColor.white, for: .normal)
-        authButton.layer.cornerRadius = 20
-        authButton.layer.masksToBounds = true
-        authButton.layer.borderWidth = 1
-        authButton.layer.borderColor = UIColor.white.cgColor
-        authButton.layer.shadowColor = UIColor.systemBlue.cgColor
-        authButton.layer.shadowOffset = CGSize(width: 0, height: 2)
-        authButton.layer.shadowRadius = 4
-        authButton.layer.shadowOpacity = 0.6
-        authButton.translatesAutoresizingMaskIntoConstraints = false
+        // Safety check - ensure history button exists
+        guard let historyButton = historyButton else {
+            print("Warning: historyButton not yet created, skipping authentication UI setup")
+            return
+        }
         
-        // Create user info label
+        // Create user info label (prompt below history button)
         userInfoLabel = UILabel()
-        userInfoLabel.text = "Guest User"
+        userInfoLabel.text = "Please Sign In"
         userInfoLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
         userInfoLabel.textColor = UIColor.white
         userInfoLabel.textAlignment = .center
@@ -506,24 +504,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         userInfoLabel.layer.masksToBounds = true
         userInfoLabel.translatesAutoresizingMaskIntoConstraints = false
         
-        view.addSubview(authButton)
         view.addSubview(userInfoLabel)
         
-        // Position authentication UI
+        // Position user info label below history button
         NSLayoutConstraint.activate([
-            authButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 120),
-            authButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            authButton.widthAnchor.constraint(equalToConstant: 80),
-            authButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            userInfoLabel.topAnchor.constraint(equalTo: authButton.bottomAnchor, constant: 8),
-            userInfoLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            userInfoLabel.topAnchor.constraint(equalTo: historyButton.bottomAnchor, constant: 8),
+            userInfoLabel.centerXAnchor.constraint(equalTo: historyButton.centerXAnchor),
             userInfoLabel.widthAnchor.constraint(equalToConstant: 100),
             userInfoLabel.heightAnchor.constraint(equalToConstant: 20)
         ])
-        
-        // Add target action for the authentication button
-        authButton.addTarget(self, action: #selector(authButtonTapped), for: .touchUpInside)
         
         // Update authentication UI based on current state
         updateAuthenticationUI()
@@ -532,23 +521,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func updateAuthenticationUI() {
         guard let firebaseService = firebaseService else { return }
         
+        // Safety check - ensure userInfoLabel exists
+        guard let userInfoLabel = userInfoLabel else { return }
+        
         if let currentUser = Auth.auth().currentUser, !currentUser.isAnonymous {
-            // Authenticated user - show sign out option
-            authButton.setTitle("Sign Out", for: .normal)
-            authButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.9)
+            // Authenticated user
+            isUserAuthenticated = true
             userInfoLabel.text = "Signed In"
             
             // Load user's tweets from Firebase
             loadUserTweets()
         } else {
-            // No authenticated user - show sign in option
-            authButton.setTitle("Sign In", for: .normal)
-            authButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+            // No authenticated user
+            isUserAuthenticated = false
             userInfoLabel.text = "Please Sign In"
             
             // Clear local tweets when not authenticated
             tweetTexts.removeAll()
             tweetNodes.removeAll()
+            
+            // Update history button text and refresh table view
+            updateHistoryButtonText()
+            refreshTweetHistoryDisplay()
         }
     }
     
@@ -579,6 +573,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 for tweet in userTweets {
                     self?.tweetTexts.append(tweet.text)
                 }
+                
+                // Update history button text and refresh the history table view
+                self?.updateHistoryButtonText()
+                self?.refreshTweetHistoryDisplay()
                 
                 print("Loaded \(userTweets.count) tweets for user \(userId)")
                 self?.isLoadingUserTweets = false
@@ -1026,6 +1024,27 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         present(alert, animated: true)
     }
     
+    func showAuthenticationOptions() {
+        let alert = UIAlertController(title: "Authentication", message: "Choose an option", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "Sign In", style: .default) { [weak self] _ in
+            self?.showSignIn()
+        })
+        alert.addAction(UIAlertAction(title: "Create Account", style: .default) { [weak self] _ in
+            self?.showRegistration()
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    func showSignOutConfirmation() {
+        let alert = UIAlertController(title: "Sign Out", message: "Are you sure you want to sign out?", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Sign Out", style: .destructive) { [weak self] _ in
+            self?.signOutUser()
+        })
+        present(alert, animated: true)
+    }
+    
     @objc func authButtonTapped() {
         guard let firebaseService = firebaseService else { return }
         
@@ -1039,15 +1058,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             present(alert, animated: true)
         } else {
             // User is not signed in, show authentication options
-            let alert = UIAlertController(title: "Authentication", message: "Choose an option", preferredStyle: .actionSheet)
-            alert.addAction(UIAlertAction(title: "Sign In", style: .default) { [weak self] _ in
-                self?.showSignIn()
-            })
-            alert.addAction(UIAlertAction(title: "Create Account", style: .default) { [weak self] _ in
-                self?.showRegistration()
-            })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            present(alert, animated: true)
+            showAuthenticationOptions()
         }
     }
     
@@ -1075,6 +1086,45 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             // Update UI to show sign-in state
             updateAuthenticationUI()
             print("User signed out successfully")
+        }
+    }
+    
+    // MARK: - Notification Handlers
+    
+    @objc func handleAuthenticationStateChanged() {
+        // Update authentication UI and refresh tweets when auth state changes
+        DispatchQueue.main.async {
+            self.updateAuthenticationUI()
+            
+            // Force refresh the history display
+            self.refreshTweetHistoryDisplay()
+        }
+    }
+    
+    deinit {
+        // Remove notification observer
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func updateHistoryButtonText() {
+        guard let historyButton = historyButton else { return }
+        
+        if isUserAuthenticated {
+            let tweetCount = tweetTexts.count
+            historyButton.setTitle("History (\(tweetCount))", for: .normal)
+        } else {
+            historyButton.setTitle("History", for: .normal)
+        }
+    }
+    
+    private func refreshTweetHistoryDisplay() {
+        DispatchQueue.main.async {
+            self.updateHistoryButtonText()
+            if let historyTableView = self.historyTableView, !historyTableView.isHidden {
+                historyTableView.reloadData()
+            }
         }
     }
     
@@ -1188,6 +1238,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 // Add to local arrays for history
                 DispatchQueue.main.async {
                     self?.tweetTexts.append(text)
+                    
+                    // Update history button text and refresh table view
+                    self?.refreshTweetHistoryDisplay()
                 }
             }
         }
@@ -1228,39 +1281,88 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let sequence = SCNAction.sequence([fadeAction, removeAction])
         nodeToRemove.runAction(sequence)
         
-        // Reload table view
+        // Update history button text and reload table view
+        updateHistoryButtonText()
         historyTableView.reloadData()
     }
     
     // MARK: - UITableViewDataSource
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return tweetTexts.count
+        if isUserAuthenticated {
+            // Show tweets + sign out button
+            return tweetTexts.count + 1
+        } else {
+            // Show sign-in button as first row when not authenticated
+            return 1
+        }
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath)
-        cell.textLabel?.text = tweetTexts[indexPath.row]
-        cell.textLabel?.textColor = UIColor.systemGreen
-        cell.textLabel?.font = getCustomFont(size: 16)
-        cell.backgroundColor = UIColor.clear
-        cell.selectionStyle = .none
         
-        // Style the cell background
-        let backgroundView = UIView()
-        backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        backgroundView.layer.cornerRadius = 8
-        backgroundView.layer.borderWidth = 1
-        backgroundView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.3).cgColor
-        cell.backgroundView = backgroundView
-        
-        // Add delete button to cell
-        let deleteButton = UIButton(type: .system)
-        deleteButton.setTitle("🗑️", for: .normal)
-        deleteButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
-        deleteButton.tag = indexPath.row
-        deleteButton.addTarget(self, action: #selector(deleteButtonTapped(_:)), for: .touchUpInside)
-        deleteButton.frame = CGRect(x: cell.contentView.frame.width - 40, y: 5, width: 30, height: 30)
-        cell.contentView.addSubview(deleteButton)
+        if isUserAuthenticated {
+            if indexPath.row < tweetTexts.count {
+                // Show tweet content
+                cell.textLabel?.text = tweetTexts[indexPath.row]
+                cell.textLabel?.textColor = UIColor.systemGreen
+                cell.textLabel?.font = getCustomFont(size: 16)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .none
+                
+                // Style the cell background
+                let backgroundView = UIView()
+                backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+                backgroundView.layer.cornerRadius = 8
+                backgroundView.layer.borderWidth = 1
+                backgroundView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.3).cgColor
+                cell.backgroundView = backgroundView
+                
+                // Add delete button to cell
+                let deleteButton = UIButton(type: .system)
+                deleteButton.setTitle("🗑️", for: .normal)
+                deleteButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
+                deleteButton.tag = indexPath.row
+                deleteButton.addTarget(self, action: #selector(deleteButtonTapped(_:)), for: .touchUpInside)
+                deleteButton.frame = CGRect(x: cell.contentView.frame.width - 40, y: 5, width: 30, height: 30)
+                cell.contentView.addSubview(deleteButton)
+            } else {
+                // Show sign-out button as last row
+                cell.textLabel?.text = "Sign Out"
+                cell.textLabel?.textColor = UIColor.white
+                cell.textLabel?.font = getCustomFont(size: 16)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .default
+                
+                // Style the cell background for sign-out button
+                let backgroundView = UIView()
+                backgroundView.backgroundColor = UIColor.systemRed.withAlphaComponent(0.8)
+                backgroundView.layer.cornerRadius = 8
+                backgroundView.layer.borderWidth = 1
+                backgroundView.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
+                cell.backgroundView = backgroundView
+                
+                // Center the text
+                cell.textLabel?.textAlignment = .center
+            }
+        } else {
+            // Show sign-in button as first row
+            cell.textLabel?.text = "Sign In"
+            cell.textLabel?.textColor = UIColor.white
+            cell.textLabel?.font = getCustomFont(size: 16)
+            cell.backgroundColor = UIColor.clear
+            cell.selectionStyle = .default
+            
+            // Style the cell background for sign-in button
+            let backgroundView = UIView()
+            backgroundView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+            backgroundView.layer.cornerRadius = 8
+            backgroundView.layer.borderWidth = 1
+            backgroundView.layer.borderColor = UIColor.systemBlue.withAlphaComponent(0.5).cgColor
+            cell.backgroundView = backgroundView
+            
+            // Center the text
+            cell.textLabel?.textAlignment = .center
+        }
         
         return cell
     }
@@ -1268,6 +1370,21 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     @objc func deleteButtonTapped(_ sender: UIButton) {
         let index = sender.tag
         deleteTweet(at: index)
+    }
+    
+    // MARK: - UITableViewDelegate
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        
+        if isUserAuthenticated {
+            if indexPath.row == tweetTexts.count {
+                // Sign-out button tapped
+                showSignOutConfirmation()
+            }
+        } else {
+            // Show authentication options when sign-in button is tapped
+            showAuthenticationOptions()
+        }
     }
     
     @objc func colorPickerButtonTapped() {

@@ -412,6 +412,9 @@ class RegistrationViewController: UIViewController {
     private func showSuccess() {
         let alert = UIAlertController(title: "Success!", message: "Your account has been created successfully!", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Continue", style: .default) { [weak self] _ in
+            // Post notification to inform main view controller about auth state change
+            NotificationCenter.default.post(name: NSNotification.Name("AuthenticationStateChanged"), object: nil)
+            
             // Dismiss the registration view controller
             self?.dismiss(animated: true)
         })

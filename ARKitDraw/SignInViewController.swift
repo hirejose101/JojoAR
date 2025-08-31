@@ -307,6 +307,9 @@ class SignInViewController: UIViewController {
         let alert = UIAlertController(title: "Success!", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Continue", style: .default) { [weak self] _ in
             if message.contains("Welcome back") {
+                // Post notification to inform main view controller about auth state change
+                NotificationCenter.default.post(name: NSNotification.Name("AuthenticationStateChanged"), object: nil)
+                
                 // Dismiss the sign in view controller
                 self?.dismiss(animated: true)
             }
