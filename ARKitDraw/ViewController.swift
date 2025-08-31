@@ -11,6 +11,7 @@ import SceneKit
 import ARKit
 import CoreLocation
 import MapKit
+import FirebaseAuth
 
 // MARK: - GTA Style Text System
 /// Professional GTA-style 3D text with proper stroke and performance optimization
@@ -250,6 +251,16 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var lastNearbyTweetsUpdate: Date?
     private let nearbyTweetsUpdateCooldown: TimeInterval = 3.0 // 3 seconds cooldown
     
+    // Authentication UI
+    private var authButton: UIButton!
+    private var userInfoLabel: UILabel!
+    
+    // UI setup flag
+    private var hasSetupUI = false
+    
+    // Prevent duplicate user tweet loading
+    private var isLoadingUserTweets = false
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -271,8 +282,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Configure modern lighting for neon effects
         configureModernLighting(for: scene)
         
-        // Setup UI
-        setupUI()
+        // Setup authentication UI
+        setupAuthenticationUI()
         
         // Initialize Firebase and Location services
         setupServices()
@@ -295,6 +306,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Run the view's session
         sceneView.session.run(configuration)
+        
+        // Update authentication UI when returning from other screens
+        // Only update if services are initialized
+        if firebaseService != nil {
+            updateAuthenticationUI()
+        }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -307,12 +324,29 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         locationManager?.stopLocationUpdates()
     }
     
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        
+        // Setup UI after IBOutlets are guaranteed to be connected
+        if !hasSetupUI && textField != nil && button != nil {
+            setupUI()
+            hasSetupUI = true
+        }
+    }
+    
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         // Release any cached data, images, etc that aren't in use.
     }
     
     func setupUI() {
+        // Safety check - ensure IBOutlets are connected
+        guard let textField = textField,
+              let button = button else {
+            print("Warning: IBOutlets not yet connected, skipping UI setup")
+            return
+        }
+        
         // Configure text field
         textField.placeholder = "What's your thought here?"
         textField.borderStyle = .none
@@ -411,6 +445,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyTableView.delegate = self
         historyTableView.dataSource = self
         historyTableView.register(UITableViewCell.self, forCellReuseIdentifier: "TweetCell")
+        
         historyTableView.translatesAutoresizingMaskIntoConstraints = false
         historyTableView.isHidden = true
         view.addSubview(historyTableView)
@@ -443,6 +478,114 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
     }
     
+    func setupAuthenticationUI() {
+        // Create authentication button
+        authButton = UIButton(type: .system)
+        authButton.setTitle("Sign In", for: .normal)
+        authButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        authButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        authButton.setTitleColor(UIColor.white, for: .normal)
+        authButton.layer.cornerRadius = 20
+        authButton.layer.masksToBounds = true
+        authButton.layer.borderWidth = 1
+        authButton.layer.borderColor = UIColor.white.cgColor
+        authButton.layer.shadowColor = UIColor.systemBlue.cgColor
+        authButton.layer.shadowOffset = CGSize(width: 0, height: 2)
+        authButton.layer.shadowRadius = 4
+        authButton.layer.shadowOpacity = 0.6
+        authButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Create user info label
+        userInfoLabel = UILabel()
+        userInfoLabel.text = "Guest User"
+        userInfoLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        userInfoLabel.textColor = UIColor.white
+        userInfoLabel.textAlignment = .center
+        userInfoLabel.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        userInfoLabel.layer.cornerRadius = 10
+        userInfoLabel.layer.masksToBounds = true
+        userInfoLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(authButton)
+        view.addSubview(userInfoLabel)
+        
+        // Position authentication UI
+        NSLayoutConstraint.activate([
+            authButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 120),
+            authButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            authButton.widthAnchor.constraint(equalToConstant: 80),
+            authButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            userInfoLabel.topAnchor.constraint(equalTo: authButton.bottomAnchor, constant: 8),
+            userInfoLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            userInfoLabel.widthAnchor.constraint(equalToConstant: 100),
+            userInfoLabel.heightAnchor.constraint(equalToConstant: 20)
+        ])
+        
+        // Add target action for the authentication button
+        authButton.addTarget(self, action: #selector(authButtonTapped), for: .touchUpInside)
+        
+        // Update authentication UI based on current state
+        updateAuthenticationUI()
+    }
+    
+    func updateAuthenticationUI() {
+        guard let firebaseService = firebaseService else { return }
+        
+        if let currentUser = Auth.auth().currentUser, !currentUser.isAnonymous {
+            // Authenticated user - show sign out option
+            authButton.setTitle("Sign Out", for: .normal)
+            authButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.9)
+            userInfoLabel.text = "Signed In"
+            
+            // Load user's tweets from Firebase
+            loadUserTweets()
+        } else {
+            // No authenticated user - show sign in option
+            authButton.setTitle("Sign In", for: .normal)
+            authButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+            userInfoLabel.text = "Please Sign In"
+            
+            // Clear local tweets when not authenticated
+            tweetTexts.removeAll()
+            tweetNodes.removeAll()
+        }
+    }
+    
+    func loadUserTweets() {
+        guard let userId = firebaseService.getCurrentUserId() else { return }
+        
+        // Prevent multiple calls to this method
+        if isLoadingUserTweets { return }
+        isLoadingUserTweets = true
+        
+        // Clear existing local tweets
+        tweetTexts.removeAll()
+        tweetNodes.removeAll()
+        
+        // Fetch user's tweets from Firebase
+        firebaseService.fetchNearbyTweets(latitude: 0, longitude: 0, radius: Double.infinity) { [weak self] tweets, error in
+            if let error = error {
+                print("Error loading user tweets: \(error)")
+                self?.isLoadingUserTweets = false
+                return
+            }
+            
+            // Filter tweets to only show the current user's tweets
+            let userTweets = tweets.filter { $0.userId == userId }
+            
+            DispatchQueue.main.async {
+                // Add user's tweets to local arrays
+                for tweet in userTweets {
+                    self?.tweetTexts.append(tweet.text)
+                }
+                
+                print("Loaded \(userTweets.count) tweets for user \(userId)")
+                self?.isLoadingUserTweets = false
+            }
+        }
+    }
+    
     func setupServices() {
         // Initialize Firebase service
         firebaseService = FirebaseService()
@@ -453,21 +596,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self?.onLocationUpdated(location)
         }
         
-        // Sign in anonymously to Firebase
-        firebaseService.signInAnonymously { [weak self] userId, error in
-            if let error = error {
-                print("Firebase sign in error: \(error)")
-                return
-            }
-            
-            self?.currentUserId = userId
-            print("Signed in with user ID: \(userId ?? "unknown")")
-            
-            // Start location updates after authentication
-            DispatchQueue.main.async {
-                self?.locationManager.startLocationUpdates()
-            }
-        }
+        // Start location updates immediately (no anonymous auth needed)
+        locationManager.startLocationUpdates()
+        
+        // Update authentication UI
+        updateAuthenticationUI()
     }
     
     func onLocationUpdated(_ location: CLLocation) {
@@ -492,7 +625,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        firebaseService.fetchNearbyTweets(location: location, radius: 100) { [weak self] tweets, error in
+        firebaseService.fetchNearbyTweets(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude, radius: 100) { [weak self] tweets, error in
             if let error = error {
                 print("Error loading nearby tweets: \(error)")
                 return
@@ -602,7 +735,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         print("🔍 Search location: \(searchLocation.coordinate.latitude), \(searchLocation.coordinate.longitude)")
         
         // Fetch tweets for the new area
-        firebaseService.fetchNearbyTweets(location: searchLocation, radius: cappedRadius) { [weak self] tweets, error in
+        firebaseService.fetchNearbyTweets(latitude: searchLocation.coordinate.latitude, longitude: searchLocation.coordinate.longitude, radius: cappedRadius) { [weak self] tweets, error in
             if let error = error {
                 print("❌ Error searching tweets in new area: \(error)")
                 return
@@ -893,6 +1026,60 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         present(alert, animated: true)
     }
     
+    @objc func authButtonTapped() {
+        guard let firebaseService = firebaseService else { return }
+        
+        if firebaseService.isUserSignedIn() {
+            // User is signed in, show sign out confirmation
+            let alert = UIAlertController(title: "Sign Out", message: "Are you sure you want to sign out?", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Sign Out", style: .destructive) { [weak self] _ in
+                self?.signOutUser()
+            })
+            present(alert, animated: true)
+        } else {
+            // User is not signed in, show authentication options
+            let alert = UIAlertController(title: "Authentication", message: "Choose an option", preferredStyle: .actionSheet)
+            alert.addAction(UIAlertAction(title: "Sign In", style: .default) { [weak self] _ in
+                self?.showSignIn()
+            })
+            alert.addAction(UIAlertAction(title: "Create Account", style: .default) { [weak self] _ in
+                self?.showRegistration()
+            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            present(alert, animated: true)
+        }
+    }
+    
+    func showSignIn() {
+        let signInVC = SignInViewController()
+        let navController = UINavigationController(rootViewController: signInVC)
+        present(navController, animated: true)
+    }
+    
+    func showRegistration() {
+        let registrationVC = RegistrationViewController()
+        let navController = UINavigationController(rootViewController: registrationVC)
+        present(navController, animated: true)
+    }
+    
+    func signOutUser() {
+        guard let firebaseService = firebaseService else { return }
+        
+        let error = firebaseService.signOut()
+        if let error = error {
+            print("Error signing out: \(error)")
+        } else {
+            // Clear current user ID
+            currentUserId = nil
+            // Update UI to show sign-in state
+            updateAuthenticationUI()
+            print("User signed out successfully")
+        }
+    }
+    
+
+    
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
         guard isWaitingForTap, let tweetText = pendingTweetText else { return }
         
@@ -930,9 +1117,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let textNode = createTextNode(text: text, position: tweetPosition)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
-        // Store reference to the tweet node and text
+        // Store reference to the tweet node (text will be added in savePersistentTweet)
         tweetNodes.append(textNode)
-        tweetTexts.append(text)
         
         // Add to scene
         sceneView.scene.rootNode.addChildNode(textNode)
@@ -960,16 +1146,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let textNode = createTextNode(text: text, position: tweetPosition)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
-        // Store reference to the tweet node and text
+        // Store reference to the tweet node (text will be added in savePersistentTweet)
         tweetNodes.append(textNode)
-        tweetTexts.append(text)
         
         // Add to scene
         sceneView.scene.rootNode.addChildNode(textNode)
     }
     
     func savePersistentTweet(text: String, position: SCNVector3) {
-        guard let userId = currentUserId,
+        // Use authenticated user ID if available, otherwise fall back to anonymous ID
+        let userId = firebaseService.getCurrentUserId() ?? currentUserId
+        
+        guard let userId = userId,
               let location = locationManager.currentLocation else {
             print("Cannot save tweet: missing user ID or location")
             return
@@ -997,6 +1185,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 }
             } else {
                 print("Tweet saved successfully")
+                // Add to local arrays for history
+                DispatchQueue.main.async {
+                    self?.tweetTexts.append(text)
+                }
             }
         }
     }
