@@ -1290,18 +1290,22 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         for hitTestResult in hitTestResults {
             let node = hitTestResult.node
             
-            // Check if the tapped node is a tweet
-            if let nodeName = node.name,
-               (nodeName.hasPrefix("nearby_tweet_") || nodeName.hasPrefix("my_tweet_")) {
-                
-                // Extract tweet ID from node name
-                let tweetId = nodeName.replacingOccurrences(of: "nearby_tweet_", with: "")
-                    .replacingOccurrences(of: "my_tweet_", with: "")
-                
-                if !tweetId.isEmpty {
-                    handleTweetTap(tweetId: tweetId, node: node)
+            // Find the parent tweet node by traversing up the hierarchy
+            var currentNode = node
+            while currentNode.parent != nil {
+                if let nodeName = currentNode.name,
+                   (nodeName.hasPrefix("nearby_tweet_") || nodeName.hasPrefix("my_tweet_")) {
+                    
+                    // Extract tweet ID from node name
+                    let tweetId = nodeName.replacingOccurrences(of: "nearby_tweet_", with: "")
+                        .replacingOccurrences(of: "my_tweet_", with: "")
+                    
+                    if !tweetId.isEmpty {
+                        handleTweetTap(tweetId: tweetId, node: currentNode)
+                    }
+                    return
                 }
-                return
+                currentNode = currentNode.parent!
             }
         }
     }
