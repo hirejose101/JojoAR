@@ -136,12 +136,146 @@ class FirebaseService {
             "worldPositionY": tweet.worldPositionY,
             "worldPositionZ": tweet.worldPositionZ,
             "timestamp": Timestamp(date: tweet.timestamp),
-            "isPublic": tweet.isPublic
+            "isPublic": tweet.isPublic,
+            "likes": tweet.likes,
+            "comments": tweet.comments.map { comment in
+                return [
+                    "id": comment.id,
+                    "text": comment.text,
+                    "userId": comment.userId,
+                    "username": comment.username,
+                    "timestamp": Timestamp(date: comment.timestamp)
+                ]
+            }
         ]
         
         db.collection(tweetsCollection).document(tweet.id).setData(tweetData) { error in
             completion(error)
         }
+    }
+    
+    // MARK: - Like Management
+    
+    func toggleLike(tweetId: String, userId: String, completion: @escaping (Error?) -> Void) {
+        let tweetRef = db.collection(tweetsCollection).document(tweetId)
+        
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
+            let tweetDocument: DocumentSnapshot
+            do {
+                try tweetDocument = transaction.getDocument(tweetRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let oldData = tweetDocument.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tweet not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            var likes = oldData["likes"] as? [String] ?? []
+            
+            if likes.contains(userId) {
+                // Unlike: remove user from likes
+                likes.removeAll { $0 == userId }
+            } else {
+                // Like: add user to likes
+                likes.append(userId)
+            }
+            
+            transaction.updateData(["likes": likes], forDocument: tweetRef)
+            return nil
+        }) { (_, error) in
+            completion(error)
+        }
+    }
+    
+    // MARK: - Comment Management
+    
+    func addComment(tweetId: String, text: String, userId: String, username: String, completion: @escaping (Error?) -> Void) {
+        let tweetRef = db.collection(tweetsCollection).document(tweetId)
+        let commentId = UUID().uuidString
+        
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
+            let tweetDocument: DocumentSnapshot
+            do {
+                try tweetDocument = transaction.getDocument(tweetRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let oldData = tweetDocument.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tweet not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            var comments = oldData["comments"] as? [[String: Any]] ?? []
+            
+            let newComment: [String: Any] = [
+                "id": commentId,
+                "text": text,
+                "userId": userId,
+                "username": username,
+                "timestamp": Timestamp(date: Date())
+            ]
+            
+            comments.append(newComment)
+            
+            transaction.updateData(["comments": comments], forDocument: tweetRef)
+            return nil
+        }) { (_, error) in
+            completion(error)
+        }
+    }
+    
+    func getComments(tweetId: String, completion: @escaping ([TweetComment], Error?) -> Void) {
+        db.collection(tweetsCollection).document(tweetId).getDocument { document, error in
+            if let error = error {
+                completion([], error)
+                return
+            }
+            
+            guard let document = document, document.exists,
+                  let data = document.data(),
+                  let commentsData = data["comments"] as? [[String: Any]] else {
+                completion([], nil)
+                return
+            }
+            
+            var comments: [TweetComment] = []
+            
+            for commentData in commentsData {
+                if let comment = self.commentFromData(commentData) {
+                    comments.append(comment)
+                }
+            }
+            
+            // Sort comments by timestamp (newest first)
+            comments.sort { $0.timestamp > $1.timestamp }
+            
+            completion(comments, nil)
+        }
+    }
+    
+    private func commentFromData(_ data: [String: Any]) -> TweetComment? {
+        guard let id = data["id"] as? String,
+              let text = data["text"] as? String,
+              let userId = data["userId"] as? String,
+              let username = data["username"] as? String,
+              let timestamp = data["timestamp"] as? Timestamp else {
+            return nil
+        }
+        
+        return TweetComment(
+            id: id,
+            text: text,
+            userId: userId,
+            username: username,
+            timestamp: timestamp.dateValue()
+        )
     }
     
     func fetchNearbyTweets(latitude: Double, longitude: Double, radius: Double, completion: @escaping ([PersistentTweet], Error?) -> Void) {
@@ -195,6 +329,17 @@ class FirebaseService {
         let altitude = data["altitude"] as? Double
         let worldPosition = SCNVector3(worldPositionX, worldPositionY, worldPositionZ)
         
+        // Parse likes and comments
+        let likes = data["likes"] as? [String] ?? []
+        let commentsData = data["comments"] as? [[String: Any]] ?? []
+        var comments: [TweetComment] = []
+        
+        for commentData in commentsData {
+            if let comment = commentFromData(commentData) {
+                comments.append(comment)
+            }
+        }
+        
         return PersistentTweet(
             id: id,
             text: text,
@@ -204,7 +349,9 @@ class FirebaseService {
             worldPosition: worldPosition,
             userId: userId,
             timestamp: timestamp.dateValue(),
-            isPublic: isPublic
+            isPublic: isPublic,
+            likes: likes,
+            comments: comments
         )
     }
     

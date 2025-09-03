@@ -261,6 +261,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // Prevent duplicate user tweet loading
     private var isLoadingUserTweets = false
     
+    // MARK: - Like and Comment Functionality
+    private var tweetInteractionViews: [String: TweetInteractionView] = [:]
+    private var commentInputView: CommentInputView?
+    private var commentDisplayView: CommentDisplayView?
+    private var selectedTweetId: String?
+    private var currentUserProfile: UserProfile?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -468,6 +475,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Setup authentication UI after all UI elements are created
         setupAuthenticationUI()
+        
+        // Setup like and comment interaction views
+        setupInteractionViews()
     }
     
     func setupMiniMap() {
@@ -484,6 +494,44 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             miniMapView.widthAnchor.constraint(equalToConstant: 160),
             miniMapView.heightAnchor.constraint(equalToConstant: 160)
         ])
+    }
+    
+    func setupInteractionViews() {
+        // Initialize comment input view
+        commentInputView = CommentInputView()
+        commentInputView?.translatesAutoresizingMaskIntoConstraints = false
+        commentInputView?.isHidden = true
+        
+        if let commentInputView = commentInputView {
+            view.addSubview(commentInputView)
+            
+            NSLayoutConstraint.activate([
+                commentInputView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+                commentInputView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                commentInputView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+                commentInputView.heightAnchor.constraint(equalToConstant: 60)
+            ])
+        }
+        
+        // Initialize comment display view
+        commentDisplayView = CommentDisplayView()
+        commentDisplayView?.translatesAutoresizingMaskIntoConstraints = false
+        commentDisplayView?.isHidden = true
+        
+        if let commentDisplayView = commentDisplayView {
+            view.addSubview(commentDisplayView)
+            
+            NSLayoutConstraint.activate([
+                commentDisplayView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+                commentDisplayView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                commentDisplayView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -100),
+                commentDisplayView.heightAnchor.constraint(equalToConstant: 300)
+            ])
+            
+            commentDisplayView.onClose = { [weak self] in
+                self?.hideCommentDisplay()
+            }
+        }
     }
     
     func setupAuthenticationUI() {
@@ -529,6 +577,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             isUserAuthenticated = true
             userInfoLabel.text = "Signed In"
             
+            // Load user profile
+            loadUserProfile(userId: currentUser.uid)
+            
             // Load user's tweets from Firebase
             loadUserTweets()
         } else {
@@ -543,6 +594,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             // Update history button text and refresh table view
             updateHistoryButtonText()
             refreshTweetHistoryDisplay()
+        }
+    }
+    
+    func loadUserProfile(userId: String) {
+        firebaseService.getUserProfile(userId: userId) { [weak self] userProfile, error in
+            if let error = error {
+                print("Error loading user profile: \(error)")
+            } else if let userProfile = userProfile {
+                DispatchQueue.main.async {
+                    self?.currentUserProfile = userProfile
+                }
+            }
         }
     }
     
@@ -1131,19 +1194,187 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
 
     
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard isWaitingForTap, let tweetText = pendingTweetText else { return }
-        
         let location = gesture.location(in: sceneView)
-        createTweetAtLocation(text: tweetText, location: location)
         
-        // Reset state
-        isWaitingForTap = false
-        pendingTweetText = nil
+        // Check if we're waiting to place a new tweet
+        if isWaitingForTap, let tweetText = pendingTweetText {
+            createTweetAtLocation(text: tweetText, location: location)
+            
+            // Reset state
+            isWaitingForTap = false
+            pendingTweetText = nil
+            
+            // Reset button
+            button.setTitle("Enter", for: .normal)
+            button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+            button.setTitleColor(UIColor.white, for: .normal)
+            return
+        }
         
-        // Reset button
-        button.setTitle("Enter", for: .normal)
-        button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
-        button.setTitleColor(UIColor.white, for: .normal)
+        // Check if user tapped on an existing tweet
+        let hitTestResults = sceneView.hitTest(location, options: [:])
+        
+        for hitTestResult in hitTestResults {
+            let node = hitTestResult.node
+            
+            // Check if the tapped node is a tweet
+            if let nodeName = node.name,
+               (nodeName.hasPrefix("nearby_tweet_") || nodeName.hasPrefix("my_tweet_")) {
+                
+                // Extract tweet ID from node name
+                let tweetId = nodeName.replacingOccurrences(of: "nearby_tweet_", with: "")
+                    .replacingOccurrences(of: "my_tweet_", with: "")
+                
+                if !tweetId.isEmpty {
+                    handleTweetTap(tweetId: tweetId, node: node)
+                }
+                return
+            }
+        }
+    }
+    
+    // MARK: - Tweet Interaction Methods
+    
+    func handleTweetTap(tweetId: String, node: SCNNode) {
+        // Find the tweet data
+        let tweet = nearbyTweets.first { $0.id == tweetId }
+        
+        if let tweet = tweet {
+            selectedTweetId = tweetId
+            showTweetInteractionView(for: tweet, at: node)
+        }
+    }
+    
+    func showTweetInteractionView(for tweet: PersistentTweet, at node: SCNNode) {
+        // Remove any existing interaction view
+        hideTweetInteractionView()
+        
+        // Create interaction view as a floating overlay
+        let interactionView = TweetInteractionView()
+        interactionView.configure(with: tweet, isLiked: tweet.isLikedBy(userId: firebaseService.getCurrentUserId() ?? ""))
+        interactionView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Set up callbacks
+        interactionView.onLikeTapped = { [weak self] tweetId in
+            self?.handleLikeTapped(tweetId: tweetId)
+        }
+        
+        interactionView.onCommentTapped = { [weak self] tweetId in
+            self?.handleCommentTapped(tweetId: tweetId)
+        }
+        
+        // Add to view hierarchy
+        view.addSubview(interactionView)
+        
+        // Position in center of screen
+        NSLayoutConstraint.activate([
+            interactionView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            interactionView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            interactionView.widthAnchor.constraint(equalToConstant: 200),
+            interactionView.heightAnchor.constraint(equalToConstant: 50)
+        ])
+        
+        // Store reference
+        tweetInteractionViews[tweet.id] = interactionView
+        
+        // Auto-hide after 5 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            self?.hideTweetInteractionView()
+        }
+    }
+    
+    func hideTweetInteractionView() {
+        // Remove all interaction views from view hierarchy
+        for (_, interactionView) in tweetInteractionViews {
+            interactionView.removeFromSuperview()
+        }
+        
+        tweetInteractionViews.removeAll()
+    }
+    
+    func handleLikeTapped(tweetId: String) {
+        guard let userId = firebaseService.getCurrentUserId() else {
+            print("User not authenticated")
+            return
+        }
+        
+        firebaseService.toggleLike(tweetId: tweetId, userId: userId) { [weak self] error in
+            if let error = error {
+                print("Error toggling like: \(error)")
+            } else {
+                // Update the UI
+                DispatchQueue.main.async {
+                    self?.updateTweetLikeState(tweetId: tweetId)
+                }
+            }
+        }
+    }
+    
+    func handleCommentTapped(tweetId: String) {
+        selectedTweetId = tweetId
+        showCommentInput()
+    }
+    
+    func showCommentInput() {
+        commentInputView?.isHidden = false
+        commentInputView?.onSendComment = { [weak self] commentText in
+            self?.sendComment(commentText)
+        }
+    }
+    
+    func hideCommentInput() {
+        commentInputView?.isHidden = true
+    }
+    
+    func sendComment(_ text: String) {
+        guard let tweetId = selectedTweetId,
+              let userId = firebaseService.getCurrentUserId(),
+              let userProfile = currentUserProfile else {
+            print("Missing required data for comment")
+            return
+        }
+        
+        firebaseService.addComment(tweetId: tweetId, text: text, userId: userId, username: userProfile.username) { [weak self] error in
+            if let error = error {
+                print("Error adding comment: \(error)")
+            } else {
+                DispatchQueue.main.async {
+                    self?.hideCommentInput()
+                    self?.showComments(for: tweetId)
+                }
+            }
+        }
+    }
+    
+    func showComments(for tweetId: String) {
+        firebaseService.getComments(tweetId: tweetId) { [weak self] comments, error in
+            if let error = error {
+                print("Error fetching comments: \(error)")
+            } else {
+                DispatchQueue.main.async {
+                    self?.commentDisplayView?.configure(with: comments)
+                    self?.commentDisplayView?.isHidden = false
+                }
+            }
+        }
+    }
+    
+    func hideCommentDisplay() {
+        commentDisplayView?.isHidden = true
+    }
+    
+    func updateTweetLikeState(tweetId: String) {
+        // Find the tweet and update its like state
+        if let index = nearbyTweets.firstIndex(where: { $0.id == tweetId }) {
+            // This would need to be updated when we fetch fresh data from Firebase
+            // For now, we'll just refresh the nearby tweets
+            refreshNearbyTweets()
+        }
+    }
+    
+    func refreshNearbyTweets() {
+        guard let location = locationManager.currentLocation else { return }
+        loadNearbyTweets(location: location)
     }
     
     func createTweetAtLocation(text: String, location: CGPoint) {
@@ -1222,7 +1453,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             worldPosition: position,
             userId: userId,
             timestamp: Date(),
-            isPublic: true
+            isPublic: true,
+            likes: [],
+            comments: []
         )
         
         firebaseService.saveTweet(tweet) { [weak self] error in
