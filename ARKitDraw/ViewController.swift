@@ -13,6 +13,95 @@ import CoreLocation
 import MapKit
 import FirebaseAuth
 
+// MARK: - Street Sign Style Text System
+/// Creates street sign-style AR text nodes with proper centering and no drift
+func makeStreetSignNode(
+    text: String,
+    primaryFontName: String? = "AvenirNext-Heavy",
+    fallbackWeight: UIFont.Weight = .heavy,
+    targetTextHeightMeters: CGFloat = 0.08,   // final text height in AR (tweak)
+    horizontalPaddingMeters: CGFloat = 0.04,  // board padding left/right
+    verticalPaddingMeters: CGFloat = 0.024,   // board padding top/bottom
+    textColor: UIColor = .white,
+    boardColor: UIColor = .black,
+    cornerRadiusMeters: CGFloat = 0.01,       // rounded board corners
+    billboard: Bool = true                    // always face camera
+) -> SCNNode {
+
+    // 1) Build the SCNText (no extrusion for a flat sign)
+    let uiFont: UIFont = {
+        if let n = primaryFontName, let f = UIFont(name: n, size: 220) {
+            return f
+        }
+        return UIFont.systemFont(ofSize: 220, weight: fallbackWeight)
+    }()
+
+    let scnText = SCNText(string: text, extrusionDepth: 0.0)
+    scnText.font = uiFont
+    scnText.flatness = 0.006  // smoother curves
+    scnText.chamferRadius = 0 // not needed for flat
+
+    // Materials: unlit so room lighting doesn't wash out the sign
+    let face = SCNMaterial()
+    face.diffuse.contents = textColor
+    face.lightingModel = .constant
+    face.isDoubleSided = false
+    scnText.firstMaterial = face
+
+    let textNode = SCNNode(geometry: scnText)
+
+    // 2) Normalize size: scale the text so its *height* matches targetTextHeightMeters
+    // Measure bounds (in its native size)
+    scnText.string = text // ensure layout
+    let boundingBox = scnText.boundingBox
+    let nativeWidth  = CGFloat(boundingBox.max.x - boundingBox.min.x)
+    let nativeHeight = CGFloat(boundingBox.max.y - boundingBox.min.y)
+    let scale = targetTextHeightMeters / max(nativeHeight, 0.0001)
+    textNode.scale = SCNVector3(scale, scale, scale)
+
+    // 3) Center the text around its origin (so it aligns with board center)
+    let centeredPivot = SCNMatrix4MakeTranslation(
+        (boundingBox.min.x + boundingBox.max.x) * 0.5,
+        (boundingBox.min.y + boundingBox.max.y) * 0.5,
+        (boundingBox.min.z + boundingBox.max.z) * 0.5
+    )
+    textNode.pivot = centeredPivot
+
+    // Recompute the text size after scaling
+    let textWidthMeters  = nativeWidth  * scale
+    let textHeightMeters = nativeHeight * scale
+
+    // 4) Build the board (SCNPlane) with padding
+    let boardWidth  = textWidthMeters  + 2 * horizontalPaddingMeters
+    let boardHeight = textHeightMeters + 2 * verticalPaddingMeters
+
+    let boardPlane = SCNPlane(width: boardWidth, height: boardHeight)
+    let boardMat = SCNMaterial()
+    boardMat.diffuse.contents = boardColor
+    boardMat.lightingModel = .constant
+    boardMat.isDoubleSided = true
+    boardPlane.cornerRadius = cornerRadiusMeters
+    boardPlane.firstMaterial = boardMat
+
+    let boardNode = SCNNode(geometry: boardPlane)
+
+    // 5) Center board as well (plane's origin is already centered, so pivot OK by default)
+    // Slight Z offset for text to sit "above" board, preventing z-fighting
+    textNode.position = SCNVector3(0, 0, 0.001)
+
+    // 6) Group both under a single parent (the street sign)
+    let signNode = SCNNode()
+    signNode.castsShadow = false
+    signNode.addChildNode(boardNode)
+    signNode.addChildNode(textNode)
+
+    if billboard {
+        signNode.constraints = [SCNBillboardConstraint()] // always face camera
+    }
+
+    return signNode
+}
+
 // MARK: - GTA Style Text System
 /// Professional GTA-style 3D text with proper stroke and performance optimization
 class GTAText {
@@ -1019,45 +1108,29 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func createTextNode(text: String, position: SCNVector3) -> SCNNode {
-        // Create simple working text first to debug
-        let textGeometry = SCNText(string: text, extrusionDepth: 0.06)
-        textGeometry.font = UIFont.systemFont(ofSize: 0.22, weight: .heavy)
-        textGeometry.flatness = 0.015
-        textGeometry.chamferRadius = 0.004
+        // Create street sign-style AR tweet
+        let tweetSign = makeStreetSignNode(
+            text: text,
+            primaryFontName: "AvenirNext-Heavy",
+            targetTextHeightMeters: 0.08,
+            horizontalPaddingMeters: 0.04,
+            verticalPaddingMeters: 0.024,
+            textColor: .white,
+            boardColor: selectedBorderColor, // Use the selected color for the board
+            cornerRadiusMeters: 0.01,
+            billboard: true
+        )
         
-        // Simple materials that definitely work
-        let faceMaterial = SCNMaterial()
-        faceMaterial.diffuse.contents = UIColor.white
-        faceMaterial.lightingModel = .constant
-        
-        let sideMaterial = SCNMaterial()
-        sideMaterial.diffuse.contents = selectedBorderColor
-        sideMaterial.lightingModel = .constant
-        
-        textGeometry.materials = [faceMaterial, sideMaterial]
-        
-        let textNode = SCNNode(geometry: textGeometry)
-        
-        // Center the text
-        let (min, max) = textGeometry.boundingBox
-        let dx = Float(max.x - min.x)
-        let dy = Float(max.y - min.y)
-        let dz = Float(max.z - min.z)
-        textNode.pivot = SCNMatrix4MakeTranslation(dx/2, dy/2, dz/2)
-        
-        // Position the text at the specified world position
-        textNode.position = position
-        
-        // Make the text face the camera
-        textNode.constraints = [SCNBillboardConstraint()]
+        // Position the sign at the specified world position
+        tweetSign.position = position
         
         // Add some animation
-        textNode.scale = SCNVector3(0, 0, 0)
+        tweetSign.scale = SCNVector3(0, 0, 0)
         let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
         scaleAction.timingMode = .easeOut
-        textNode.runAction(scaleAction)
+        tweetSign.runAction(scaleAction)
         
-        return textNode
+        return tweetSign
     }
     
     @objc func enterButtonTapped() {
