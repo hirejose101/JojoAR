@@ -4,9 +4,8 @@ import SceneKit
 class TweetInteractionView: UIView {
     
     // MARK: - UI Components
-    private let likeLabel = UILabel()
+    private let likeButton = UIButton(type: .system)
     private let commentButton = UIButton(type: .system)
-    private let likeCountLabel = UILabel()
     private let commentCountLabel = UILabel()
     private let stackView = UIStackView()
     
@@ -38,16 +37,11 @@ class TweetInteractionView: UIView {
         stackView.spacing = 8
         stackView.translatesAutoresizingMaskIntoConstraints = false
         
-        // Configure like label
-        likeLabel.text = "♡"
-        likeLabel.textColor = .white
-        likeLabel.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        likeLabel.textAlignment = .center
-        likeLabel.isUserInteractionEnabled = true
-        
-        // Add tap gesture to like label
-        let likeTapGesture = UITapGestureRecognizer(target: self, action: #selector(likeButtonTapped))
-        likeLabel.addGestureRecognizer(likeTapGesture)
+        // Configure like button
+        likeButton.setImage(UIImage(systemName: "heart"), for: .normal)
+        likeButton.tintColor = .white
+        likeButton.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        likeButton.addTarget(self, action: #selector(likeButtonTapped), for: .touchUpInside)
         
         // Configure comment button
         commentButton.setImage(UIImage(systemName: "bubble.left"), for: .normal)
@@ -55,11 +49,7 @@ class TweetInteractionView: UIView {
         commentButton.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
         commentButton.addTarget(self, action: #selector(commentButtonTapped), for: .touchUpInside)
         
-        // Configure labels
-        likeCountLabel.textColor = .white
-        likeCountLabel.font = UIFont.systemFont(ofSize: 10, weight: .medium)
-        likeCountLabel.textAlignment = .center
-        
+        // Configure comment count label
         commentCountLabel.textColor = .white
         commentCountLabel.font = UIFont.systemFont(ofSize: 10, weight: .medium)
         commentCountLabel.textAlignment = .center
@@ -68,7 +58,7 @@ class TweetInteractionView: UIView {
         addSubview(stackView)
         
         // Add buttons to stack view
-        stackView.addArrangedSubview(likeLabel)
+        stackView.addArrangedSubview(likeButton)
         stackView.addArrangedSubview(commentButton)
         
         // Setup constraints
@@ -78,7 +68,7 @@ class TweetInteractionView: UIView {
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
             
-            likeLabel.heightAnchor.constraint(equalToConstant: 24),
+            likeButton.heightAnchor.constraint(equalToConstant: 24),
             commentButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
@@ -87,25 +77,16 @@ class TweetInteractionView: UIView {
     func configure(with tweet: PersistentTweet, isLiked: Bool = false) {
         tweetId = tweet.id
         
-        // Update like label
-        likeLabel.textColor = .white
+        // Update like button with count
+        likeButton.setTitle(tweet.likeCount > 0 ? " \(tweet.likeCount)" : "", for: .normal)
         
-        // Update counts
-        likeCountLabel.text = tweet.likeCount > 0 ? "\(tweet.likeCount)" : ""
-        commentCountLabel.text = tweet.commentCount > 0 ? "\(tweet.commentCount)" : ""
-        
-        // Update like label with heart symbol and count
-        let likeTitle = tweet.likeCount > 0 ? "♡ \(tweet.likeCount)" : "♡"
-        likeLabel.text = likeTitle
-        
+        // Update comment count
         commentButton.setTitle(tweet.commentCount > 0 ? " \(tweet.commentCount)" : "", for: .normal)
     }
     
     func updateLikeState(isLiked: Bool, likeCount: Int) {
-        // Update like label with heart symbol and count
-        let titleText = likeCount > 0 ? "♡ \(likeCount)" : "♡"
-        likeLabel.text = titleText
-        likeLabel.textColor = .white
+        // Update like button with count
+        likeButton.setTitle(likeCount > 0 ? " \(likeCount)" : "", for: .normal)
     }
     
     func updateCommentCount(_ count: Int) {
