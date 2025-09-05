@@ -1284,11 +1284,21 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        // Check if user tapped on an existing tweet
+        // Check if user tapped on an existing tweet or interaction node
         let hitTestResults = sceneView.hitTest(location, options: [:])
         
-        for hitTestResult in hitTestResults {
+        print("🔍 Hit test results: \(hitTestResults.count)")
+        for (index, hitTestResult) in hitTestResults.enumerated() {
             let node = hitTestResult.node
+            print("🔍 Hit \(index): node name = \(node.name ?? "nil")")
+            
+            // Check if tapped on an interaction node
+            if let nodeName = node.name, nodeName.hasPrefix("interaction_") {
+                let tweetId = nodeName.replacingOccurrences(of: "interaction_", with: "")
+                print("🎯 Tapped on interaction node for tweet: \(tweetId)")
+                handleInteractionNodeTap(tweetId: tweetId, location: location)
+                return
+            }
             
             // Find the parent tweet node by traversing up the hierarchy
             var currentNode = node
@@ -1312,9 +1322,68 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     // MARK: - Tweet Interaction Methods
     
+    func handleInteractionNodeTap(tweetId: String, location: CGPoint) {
+        print("🎯 Handling interaction tap for tweet: \(tweetId)")
+        
+        // Get the hit test result to find the exact 3D position
+        let hitTestResults = sceneView.hitTest(location, options: [:])
+        
+        for hitTestResult in hitTestResults {
+            if let nodeName = hitTestResult.node.name, nodeName == "interaction_\(tweetId)" {
+                // Get the local coordinates within the plane
+                let localCoordinates = hitTestResult.localCoordinates
+                print("🎯 Local coordinates: x=\(localCoordinates.x), y=\(localCoordinates.y)")
+                
+                // The plane is 0.25 wide, so left half is < 0, right half is > 0
+                if localCoordinates.x < 0 {
+                    // Like button tapped (left side)
+                    print("❤️ Like button tapped - coordinates: x=\(localCoordinates.x)")
+                    handleLikeTapped(tweetId: tweetId)
+                } else {
+                    // Comment button tapped (right side)
+                    print("💬 Comment button tapped - coordinates: x=\(localCoordinates.x)")
+                    handleCommentTapped(tweetId: tweetId)
+                }
+                return
+            }
+        }
+        
+        print("❌ No interaction node found in hit test results")
+    }
+    
     func handleTweetTap(tweetId: String, node: SCNNode) {
-        // Find the tweet data
-        let tweet = nearbyTweets.first { $0.id == tweetId }
+        // Find the tweet data - check both nearby tweets and our own tweets
+        var tweet = nearbyTweets.first { $0.id == tweetId }
+        
+        // If not found in nearby tweets, it might be one of our own tweets
+        // For our own tweets, we'll create a basic PersistentTweet from the node
+        if tweet == nil {
+            // Extract text from the node to create a basic tweet
+            var tweetText = ""
+            for childNode in node.childNodes {
+                if let textGeometry = childNode.geometry as? SCNText {
+                    tweetText = textGeometry.string as? String ?? ""
+                    break
+                }
+            }
+            
+            if !tweetText.isEmpty {
+                // Create a basic PersistentTweet for our own tweet
+                tweet = PersistentTweet(
+                    id: tweetId,
+                    text: tweetText,
+                    latitude: 0, // We don't have location data for display purposes
+                    longitude: 0,
+                    altitude: nil,
+                    worldPosition: node.position,
+                    userId: firebaseService.getCurrentUserId() ?? "",
+                    timestamp: Date(),
+                    isPublic: true,
+                    likes: [],
+                    comments: []
+                )
+            }
+        }
         
         if let tweet = tweet {
             selectedTweetId = tweetId
@@ -1326,10 +1395,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Remove any existing interaction view
         hideTweetInteractionView()
         
-        // Create interaction view as a floating overlay
+        // Create interaction view as a 3D node below the tweet
         let interactionView = TweetInteractionView()
         interactionView.configure(with: tweet, isLiked: tweet.isLikedBy(userId: firebaseService.getCurrentUserId() ?? ""))
-        interactionView.translatesAutoresizingMaskIntoConstraints = false
         
         // Set up callbacks
         interactionView.onLikeTapped = { [weak self] tweetId in
@@ -1340,19 +1408,64 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self?.handleCommentTapped(tweetId: tweetId)
         }
         
-        // Add to view hierarchy
-        view.addSubview(interactionView)
+        // Create a 3D plane to hold the interaction view
+        let interactionPlane = SCNPlane(width: 0.25, height: 0.08) // Smaller, more appropriate size
+        let interactionMaterial = SCNMaterial()
         
-        // Position in center of screen
-        NSLayoutConstraint.activate([
-            interactionView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            interactionView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            interactionView.widthAnchor.constraint(equalToConstant: 200),
-            interactionView.heightAnchor.constraint(equalToConstant: 50)
-        ])
+        // Convert UIView to UIImage for the material
+        interactionView.frame = CGRect(x: 0, y: 0, width: 250, height: 80) // Match plane size
+        interactionView.layoutIfNeeded()
         
-        // Store reference
+        // Force the view to render properly
+        interactionView.setNeedsDisplay()
+        interactionView.setNeedsLayout()
+        
+        // Add a small delay to ensure the view is fully rendered
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let renderer = UIGraphicsImageRenderer(size: interactionView.bounds.size)
+            let image = renderer.image { context in
+                interactionView.drawHierarchy(in: interactionView.bounds, afterScreenUpdates: true)
+            }
+            
+            interactionMaterial.diffuse.contents = image
+            interactionMaterial.lightingModel = .constant
+            interactionMaterial.isDoubleSided = true
+            interactionPlane.materials = [interactionMaterial]
+        }
+        
+        // Create the 3D node
+        let interactionNode = SCNNode(geometry: interactionPlane)
+        
+        // Position it below the tweet node
+        // Use a fixed offset below the tweet instead of calculating height
+        let interactionOffset: Float = -0.12 // Closer to the tweet
+        
+        interactionNode.position = SCNVector3(
+            node.position.x,
+            node.position.y + interactionOffset,
+            node.position.z
+        )
+        
+        // Make it face the camera (billboard)
+        interactionNode.constraints = [SCNBillboardConstraint()]
+        
+        // Enable hit testing for this node
+        interactionNode.isHidden = false
+        
+        // Add to the scene
+        sceneView.scene.rootNode.addChildNode(interactionNode)
+        
+        // Store reference with the node for cleanup
+        interactionNode.name = "interaction_\(tweet.id)"
         tweetInteractionViews[tweet.id] = interactionView
+        
+        print("✅ Created interaction node for tweet \(tweet.id) at position \(interactionNode.position)")
+        
+        // Add entrance animation
+        interactionNode.scale = SCNVector3(0, 0, 0)
+        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
+        scaleAction.timingMode = .easeOut
+        interactionNode.runAction(scaleAction)
         
         // Auto-hide after 5 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
@@ -1361,9 +1474,21 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func hideTweetInteractionView() {
-        // Remove all interaction views from view hierarchy
-        for (_, interactionView) in tweetInteractionViews {
-            interactionView.removeFromSuperview()
+        // Remove all interaction nodes from the 3D scene with animation
+        for (tweetId, _) in tweetInteractionViews {
+            let interactionNodeName = "interaction_\(tweetId)"
+            
+            // Find and remove the interaction node from the scene
+            for node in sceneView.scene.rootNode.childNodes {
+                if node.name == interactionNodeName {
+                    // Add fade-out animation
+                    let fadeAction = SCNAction.fadeOut(duration: 0.3)
+                    let removeAction = SCNAction.removeFromParentNode()
+                    let sequence = SCNAction.sequence([fadeAction, removeAction])
+                    node.runAction(sequence)
+                    break
+                }
+            }
         }
         
         tweetInteractionViews.removeAll()
@@ -1371,14 +1496,17 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func handleLikeTapped(tweetId: String) {
         guard let userId = firebaseService.getCurrentUserId() else {
-            print("User not authenticated")
+            print("❌ User not authenticated - cannot like tweet")
             return
         }
         
+        print("❤️ Attempting to like tweet \(tweetId) by user \(userId)")
+        
         firebaseService.toggleLike(tweetId: tweetId, userId: userId) { [weak self] error in
             if let error = error {
-                print("Error toggling like: \(error)")
+                print("❌ Error toggling like: \(error)")
             } else {
+                print("✅ Successfully toggled like for tweet \(tweetId)")
                 // Update the UI
                 DispatchQueue.main.async {
                     self?.updateTweetLikeState(tweetId: tweetId)
@@ -1441,10 +1569,35 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func updateTweetLikeState(tweetId: String) {
-        // Find the tweet and update its like state
+        // Find the tweet in nearby tweets and update its like state
         if let index = nearbyTweets.firstIndex(where: { $0.id == tweetId }) {
-            // This would need to be updated when we fetch fresh data from Firebase
-            // For now, we'll just refresh the nearby tweets
+            // Fetch the updated tweet data from Firebase
+            firebaseService.fetchNearbyTweets(latitude: 0, longitude: 0, radius: Double.infinity) { [weak self] tweets, error in
+                if let error = error {
+                    print("Error fetching updated tweet data: \(error)")
+                    return
+                }
+                
+                // Find the specific tweet that was liked
+                if let updatedTweet = tweets.first(where: { $0.id == tweetId }) {
+                    DispatchQueue.main.async {
+                        // Update the tweet in our array
+                        self?.nearbyTweets[index] = updatedTweet
+                        
+                        // Update the interaction view if it's currently visible
+                        if let interactionView = self?.tweetInteractionViews[tweetId] {
+                            let isLiked = updatedTweet.isLikedBy(userId: self?.firebaseService.getCurrentUserId() ?? "")
+                            interactionView.updateLikeState(isLiked: isLiked, likeCount: updatedTweet.likeCount)
+                            interactionView.updateCommentCount(updatedTweet.commentCount)
+                        }
+                        
+                        print("✅ Updated like state for tweet \(tweetId): \(updatedTweet.likeCount) likes")
+                    }
+                }
+            }
+        } else {
+            // For our own tweets, we need to refresh the specific tweet
+            // Since our tweets might not be in nearbyTweets, we'll refresh all nearby tweets
             refreshNearbyTweets()
         }
     }

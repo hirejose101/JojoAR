@@ -4,7 +4,7 @@ import SceneKit
 class TweetInteractionView: UIView {
     
     // MARK: - UI Components
-    private let likeButton = UIButton(type: .system)
+    private let likeLabel = UILabel()
     private let commentButton = UIButton(type: .system)
     private let likeCountLabel = UILabel()
     private let commentCountLabel = UILabel()
@@ -38,12 +38,16 @@ class TweetInteractionView: UIView {
         stackView.spacing = 8
         stackView.translatesAutoresizingMaskIntoConstraints = false
         
-        // Configure like button
-        likeButton.setImage(UIImage(systemName: "heart"), for: .normal)
-        likeButton.setImage(UIImage(systemName: "heart.fill"), for: .selected)
-        likeButton.tintColor = .white
-        likeButton.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-        likeButton.addTarget(self, action: #selector(likeButtonTapped), for: .touchUpInside)
+        // Configure like label
+        likeLabel.text = "♡"
+        likeLabel.textColor = .white
+        likeLabel.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        likeLabel.textAlignment = .center
+        likeLabel.isUserInteractionEnabled = true
+        
+        // Add tap gesture to like label
+        let likeTapGesture = UITapGestureRecognizer(target: self, action: #selector(likeButtonTapped))
+        likeLabel.addGestureRecognizer(likeTapGesture)
         
         // Configure comment button
         commentButton.setImage(UIImage(systemName: "bubble.left"), for: .normal)
@@ -64,7 +68,7 @@ class TweetInteractionView: UIView {
         addSubview(stackView)
         
         // Add buttons to stack view
-        stackView.addArrangedSubview(likeButton)
+        stackView.addArrangedSubview(likeLabel)
         stackView.addArrangedSubview(commentButton)
         
         // Setup constraints
@@ -74,7 +78,7 @@ class TweetInteractionView: UIView {
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
             
-            likeButton.heightAnchor.constraint(equalToConstant: 24),
+            likeLabel.heightAnchor.constraint(equalToConstant: 24),
             commentButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
@@ -83,23 +87,25 @@ class TweetInteractionView: UIView {
     func configure(with tweet: PersistentTweet, isLiked: Bool = false) {
         tweetId = tweet.id
         
-        // Update like button
-        likeButton.isSelected = isLiked
-        likeButton.tintColor = isLiked ? .systemRed : .white
+        // Update like label
+        likeLabel.textColor = .white
         
         // Update counts
         likeCountLabel.text = tweet.likeCount > 0 ? "\(tweet.likeCount)" : ""
         commentCountLabel.text = tweet.commentCount > 0 ? "\(tweet.commentCount)" : ""
         
-        // Update button titles
-        likeButton.setTitle(tweet.likeCount > 0 ? " \(tweet.likeCount)" : "", for: .normal)
+        // Update like label with heart symbol and count
+        let likeTitle = tweet.likeCount > 0 ? "♡ \(tweet.likeCount)" : "♡"
+        likeLabel.text = likeTitle
+        
         commentButton.setTitle(tweet.commentCount > 0 ? " \(tweet.commentCount)" : "", for: .normal)
     }
     
     func updateLikeState(isLiked: Bool, likeCount: Int) {
-        likeButton.isSelected = isLiked
-        likeButton.tintColor = isLiked ? .systemRed : .white
-        likeButton.setTitle(likeCount > 0 ? " \(likeCount)" : "", for: .normal)
+        // Update like label with heart symbol and count
+        let titleText = likeCount > 0 ? "♡ \(likeCount)" : "♡"
+        likeLabel.text = titleText
+        likeLabel.textColor = .white
     }
     
     func updateCommentCount(_ count: Int) {
