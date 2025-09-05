@@ -353,6 +353,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // MARK: - Like and Comment Functionality
     private var tweetInteractionViews: [String: TweetInteractionView] = [:]
     private var commentInputView: CommentInputView?
+    private var commentInputViewBottomConstraint: NSLayoutConstraint?
     private var commentDisplayView: CommentDisplayView?
     private var selectedTweetId: String?
     private var currentUserProfile: UserProfile?
@@ -390,6 +391,21 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self,
             selector: #selector(handleAuthenticationStateChanged),
             name: NSNotification.Name("AuthenticationStateChanged"),
+            object: nil
+        )
+        
+        // Add keyboard notification observers
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillShow(_:)),
+            name: NSNotification.Name.UIKeyboardWillShow,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillHide(_:)),
+            name: NSNotification.Name.UIKeyboardWillHide,
             object: nil
         )
         
@@ -594,10 +610,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         if let commentInputView = commentInputView {
             view.addSubview(commentInputView)
             
+            // Store the bottom constraint so we can modify it when keyboard appears
+            commentInputViewBottomConstraint = commentInputView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20)
+            
             NSLayoutConstraint.activate([
                 commentInputView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
                 commentInputView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-                commentInputView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+                commentInputViewBottomConstraint!,
                 commentInputView.heightAnchor.constraint(equalToConstant: 60)
             ])
         }
@@ -1928,6 +1947,35 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
         
         print("✅ All existing tweets refreshed with new iMessage bubble design.")
+    }
+    
+    // MARK: - Keyboard Handling
+    @objc private func keyboardWillShow(_ notification: Notification) {
+        guard let keyboardFrame = notification.userInfo?[UIKeyboardFrameEndUserInfoKey] as? CGRect,
+              let duration = notification.userInfo?[UIKeyboardAnimationDurationUserInfoKey] as? Double else {
+            return
+        }
+        
+        // Move comment input view above keyboard
+        let keyboardHeight = keyboardFrame.height
+        commentInputViewBottomConstraint?.constant = -keyboardHeight - 20
+        
+        UIView.animate(withDuration: duration) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        guard let duration = notification.userInfo?[UIKeyboardAnimationDurationUserInfoKey] as? Double else {
+            return
+        }
+        
+        // Move comment input view back to original position
+        commentInputViewBottomConstraint?.constant = -20
+        
+        UIView.animate(withDuration: duration) {
+            self.view.layoutIfNeeded()
+        }
     }
 }
 
