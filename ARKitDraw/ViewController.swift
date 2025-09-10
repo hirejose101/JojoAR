@@ -787,14 +787,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        // Don't auto-load tweets if we're in search mode (user manually searched an area)
-        // This prevents search results from being cleared by location updates
-        if !renderedNearbyTweetIds.isEmpty {
-            print("🔄 Skipping auto-load - user has searched tweets visible")
-            return
-        }
+        // Always allow auto-loading for dynamic tweet rendering as user walks
         
-        firebaseService.fetchNearbyTweets(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude, radius: 100) { [weak self] tweets, error in
+        firebaseService.fetchNearbyTweets(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude, radius: 20) { [weak self] tweets, error in
             if let error = error {
                 print("Error loading nearby tweets: \(error)")
                 return
@@ -816,14 +811,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
             let distance = currentLoc.distance(from: tweetLocation)
             
-            // Only show tweets within 5km (5000m) as a reasonable limit
-            let isWithinReasonableDistance = distance <= 5000
-            
-            if !isWithinReasonableDistance {
-                print("⚠️ Filtered out distant tweet: '\(tweet.text)' at \(Int(distance))m away")
-            }
-            
-            return isWithinReasonableDistance
+        // Only show tweets within 20 meters
+        return distance <= 20.0
         }
         
         print("🔍 Filtered \(tweets.count) tweets down to \(filteredTweets.count) within reasonable distance")
@@ -840,11 +829,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Only create nodes for new tweets
         for tweet in newTweets {
-            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
-            textNode.name = "nearby_tweet_\(tweet.id)"
+            guard let currentLoc = currentLocation else { continue }
             
-            // All tweets use the same green iMessage style with white text
-            // No color variations needed - consistent design throughout
+            let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
+            let distance = currentLoc.distance(from: tweetLocation)
+            
+            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: distance)
+            textNode.name = "nearby_tweet_\(tweet.id)"
             
             sceneView.scene.rootNode.addChildNode(textNode)
         }
@@ -947,7 +938,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Create nodes for new tweets (keep existing ones)
         for tweet in tweets {
-            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition)
+            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.0)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
             // All tweets use the same green iMessage style with white text
@@ -1126,7 +1117,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         print("💡 Modern lighting configured for neon effects")
     }
     
-    func createTextNode(text: String, position: SCNVector3) -> SCNNode {
+    func createTextNode(text: String, position: SCNVector3, distance: Double) -> SCNNode {
         // Create street sign-style AR tweet
         let tweetSign = makeStreetSignNode(
             text: text,
@@ -1143,9 +1134,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Position the sign at the specified world position
         tweetSign.position = position
         
-        // Add some animation
+        // Add some animation with 3x scale
         tweetSign.scale = SCNVector3(0, 0, 0)
-        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.3)
+        let scaleAction = SCNAction.scale(to: 3.0, duration: 0.3)
         scaleAction.timingMode = .easeOut
         tweetSign.runAction(scaleAction)
         
@@ -1644,7 +1635,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         savePersistentTweet(text: text, position: tweetPosition)
         
         // Create visual node
-        let textNode = createTextNode(text: text, position: tweetPosition)
+        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node (text will be added in savePersistentTweet)
@@ -1673,7 +1664,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         savePersistentTweet(text: text, position: tweetPosition)
         
         // Create visual node
-        let textNode = createTextNode(text: text, position: tweetPosition)
+        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node (text will be added in savePersistentTweet)
@@ -1929,7 +1920,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 
                 if !tweetText.isEmpty {
                     // Create a new text node with the updated design
-                    let newTextNode = createTextNode(text: tweetText, position: node.position)
+                    let newTextNode = createTextNode(text: tweetText, position: node.position, distance: 0.0)
                     newTextNode.name = nodeName // Keep the original name
                     
                     // Remove the old node
