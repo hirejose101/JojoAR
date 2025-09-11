@@ -340,6 +340,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var lastNearbyTweetsUpdate: Date?
     private let nearbyTweetsUpdateCooldown: TimeInterval = 3.0 // 3 seconds cooldown
     
+    // Guidance UI for ARKit tracking stability
+    private var guidanceLabel: UILabel!
+    
+    // See Tweets button and notification tracking
+    private var seeTweetsButton: UIButton!
+    private var notifiedTweetIds: Set<String> = []
+    
     // Authentication UI - now integrated into history table
     private var isUserAuthenticated: Bool = false
     private var userInfoLabel: UILabel!
@@ -578,6 +585,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup mini-map
         setupMiniMap()
         
+        // Setup guidance UI
+        setupGuidanceUI()
+        
+        // Setup See Tweets button
+        setupSeeTweetsButton()
+        
         // Setup authentication UI after all UI elements are created
         setupAuthenticationUI()
         
@@ -639,6 +652,183 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             commentDisplayView.onClose = { [weak self] in
                 self?.hideCommentDisplay()
             }
+        }
+    }
+    
+    func setupGuidanceUI() {
+        // Create guidance label
+        guidanceLabel = UILabel()
+        guidanceLabel.textAlignment = .center
+        guidanceLabel.textColor = .white
+        guidanceLabel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        guidanceLabel.layer.cornerRadius = 10
+        guidanceLabel.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        guidanceLabel.numberOfLines = 0
+        guidanceLabel.isHidden = true
+        guidanceLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(guidanceLabel)
+        
+        // Position in middle center of screen
+        NSLayoutConstraint.activate([
+            guidanceLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            guidanceLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            guidanceLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            guidanceLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+            guidanceLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 50)
+        ])
+    }
+    
+    func setupSeeTweetsButton() {
+        // Create See Tweets button
+        seeTweetsButton = UIButton(type: .system)
+        seeTweetsButton.setTitle("See Tweets", for: .normal)
+        seeTweetsButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        seeTweetsButton.setTitleColor(.white, for: .normal)
+        seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        seeTweetsButton.layer.cornerRadius = 12
+        seeTweetsButton.layer.shadowColor = UIColor.black.cgColor
+        seeTweetsButton.layer.shadowOffset = CGSize(width: 0, height: 2)
+        seeTweetsButton.layer.shadowOpacity = 0.3
+        seeTweetsButton.layer.shadowRadius = 4
+        seeTweetsButton.isHidden = false // Always visible
+        seeTweetsButton.addTarget(self, action: #selector(seeTweetsButtonTapped), for: .touchUpInside)
+        seeTweetsButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(seeTweetsButton)
+        
+        // Position in bottom center
+        NSLayoutConstraint.activate([
+            seeTweetsButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            seeTweetsButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            seeTweetsButton.widthAnchor.constraint(equalToConstant: 150),
+            seeTweetsButton.heightAnchor.constraint(equalToConstant: 50)
+        ])
+    }
+    
+    func showTweetsDiscoveredNotification(count: Int) {
+        let message = count == 1 ? "New tweet detected, Click 'See Tweets' button to view it" : "New tweets detected, Click 'See Tweets' button to view them"
+        guidanceLabel.text = message
+        guidanceLabel.textColor = .blue
+        guidanceLabel.isHidden = false
+        
+        // Hide after 5 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            self.guidanceLabel.isHidden = true
+        }
+    }
+    
+    func showStabilityGuidance() {
+        guidanceLabel.text = "Hold phone steady for a few secs"
+        guidanceLabel.textColor = .orange
+        guidanceLabel.isHidden = false
+        
+        // Hide after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            self.guidanceLabel.isHidden = true
+        }
+    }
+    
+    @objc func seeTweetsButtonTapped() {
+        // Show stability guidance
+        showStabilityGuidance()
+        
+        // Render tweets after a delay to let user hold steady
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.renderNearbyTweetsInAR()
+        }
+    }
+    
+    func renderNearbyTweetsInAR() {
+        print("🔘 See Tweets button tapped - starting AR rendering")
+        
+        // Get current nearby tweets and render them
+        let currentLocation = locationManager.currentLocation
+        guard let currentLoc = currentLocation else { 
+            print("❌ No current location available")
+            return 
+        }
+        
+        print("📍 Current location: \(currentLoc.coordinate.latitude), \(currentLoc.coordinate.longitude)")
+        print("📊 Total nearby tweets: \(nearbyTweets.count)")
+        print("📊 Already rendered tweets: \(renderedNearbyTweetIds.count)")
+        
+        // Get all tweets within 20m that haven't been rendered yet
+        let tweetsToRender = nearbyTweets.filter { tweet in
+            !renderedNearbyTweetIds.contains(tweet.id)
+        }
+        
+        print("🎯 Tweets to render: \(tweetsToRender.count)")
+        
+        // Render each tweet
+        for tweet in tweetsToRender {
+            let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
+            let distance = currentLoc.distance(from: tweetLocation)
+            
+            print("📱 Rendering tweet: '\(tweet.text)' at distance: \(Int(distance))m")
+            
+            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: distance)
+            textNode.name = "nearby_tweet_\(tweet.id)"
+            
+            sceneView.scene.rootNode.addChildNode(textNode)
+            renderedNearbyTweetIds.insert(tweet.id)
+        }
+        
+        if !tweetsToRender.isEmpty {
+            print("✨ Successfully rendered \(tweetsToRender.count) tweets in AR")
+        } else {
+            print("⚠️ No tweets to render - all nearby tweets may already be rendered")
+        }
+    }
+    
+    func updateGuidanceMessage() {
+        guard let frame = sceneView.session.currentFrame else { return }
+        
+        switch frame.camera.trackingState {
+        case .normal:
+            // Tracking is good, hide guidance
+            guidanceLabel.isHidden = true
+            
+        case .limited(let reason):
+            // Tracking is poor, show guidance
+            guidanceLabel.text = "📱 Hold phone steadier for better tracking"
+            guidanceLabel.textColor = .orange
+            guidanceLabel.isHidden = false
+            
+        case .notAvailable:
+            // Tracking is very poor, show guidance
+            guidanceLabel.text = "❌ Move to a brighter area with more features"
+            guidanceLabel.textColor = .red
+            guidanceLabel.isHidden = false
+        }
+    }
+    
+    func showGuidanceForNearbyTweets() {
+        guard let frame = sceneView.session.currentFrame else { return }
+        
+        switch frame.camera.trackingState {
+        case .normal:
+            // Tracking is good, tweets should appear
+            guidanceLabel.text = "✨ Nearby tweet detected!"
+            guidanceLabel.textColor = .green
+            guidanceLabel.isHidden = false
+            
+            // Hide after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.guidanceLabel.isHidden = true
+            }
+            
+        case .limited(let reason):
+            // Tracking is poor, ask user to hold steady
+            guidanceLabel.text = "📱 Hold phone steady to view nearby tweet"
+            guidanceLabel.textColor = .orange
+            guidanceLabel.isHidden = false
+            
+        case .notAvailable:
+            // Tracking is very poor, ask user to move
+            guidanceLabel.text = "❌ Move to a brighter area with more features"
+            guidanceLabel.textColor = .red
+            guidanceLabel.isHidden = false
         }
     }
     
@@ -815,40 +1005,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         return distance <= 20.0
         }
         
-        print("🔍 Filtered \(tweets.count) tweets down to \(filteredTweets.count) within reasonable distance")
+        // Check for new tweets that haven't been notified
+        let newTweets = filteredTweets.filter { tweet in
+            !notifiedTweetIds.contains(tweet.id)
+        }
         
-        // Only render tweets that haven't been rendered before
-        var newTweets: [PersistentTweet] = []
+        // Update nearbyTweets for button rendering
+        nearbyTweets = filteredTweets
         
-        for tweet in filteredTweets {
-            if !renderedNearbyTweetIds.contains(tweet.id) {
-                newTweets.append(tweet)
-                renderedNearbyTweetIds.insert(tweet.id)
+        // If there are new tweets, show discovery notification
+        if !newTweets.isEmpty {
+            showTweetsDiscoveredNotification(count: newTweets.count)
+            // Mark these tweets as notified
+            for tweet in newTweets {
+                notifiedTweetIds.insert(tweet.id)
             }
         }
-        
-        // Only create nodes for new tweets
-        for tweet in newTweets {
-            guard let currentLoc = currentLocation else { continue }
-            
-            let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
-            let distance = currentLoc.distance(from: tweetLocation)
-            
-            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: distance)
-            textNode.name = "nearby_tweet_\(tweet.id)"
-            
-            sceneView.scene.rootNode.addChildNode(textNode)
-        }
-        
-        nearbyTweets = filteredTweets
         
         // Update mini-map with nearby tweets
         miniMapView?.updateNearbyTweets(filteredTweets)
         
-        // Debug info
-        if newTweets.count > 0 {
-            print("✨ Rendered \(newTweets.count) new nearby tweets (total rendered: \(renderedNearbyTweetIds.count))")
-        }
+        // Don't render automatically - wait for button click
+        return
     }
     
     // MARK: - MiniMapSearchDelegate
@@ -1418,12 +1596,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self?.handleCommentTapped(tweetId: tweetId)
         }
         
-        // Create a 3D plane to hold the interaction view
-        let interactionPlane = SCNPlane(width: 0.25, height: 0.08) // Smaller, more appropriate size
+        // Create a 3D plane to hold the interaction view (rectangle shape)
+        let interactionPlane = SCNPlane(width: 0.4, height: 0.15) // Wider rectangle (0.25 * 1.6 = 0.4, 0.24 * 0.625 = 0.15)
         let interactionMaterial = SCNMaterial()
         
-        // Convert UIView to UIImage for the material
-        interactionView.frame = CGRect(x: 0, y: 0, width: 250, height: 80) // Match plane size
+        // Convert UIView to UIImage for the material (rectangle shape)
+        interactionView.frame = CGRect(x: 0, y: 0, width: 400, height: 150) // Rectangle: 400x150 (matches 0.4x0.15 plane)
         interactionView.layoutIfNeeded()
         
         // Force the view to render properly
@@ -1448,13 +1626,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Position it below the tweet node
         // Use a fixed offset below the tweet instead of calculating height
-        let interactionOffset: Float = -0.12 // Closer to the tweet
+        let interactionOffset: Float = -0.08 // Much smaller gap for closer positioning
         
-        interactionNode.position = SCNVector3(
-            node.position.x,
-            node.position.y + interactionOffset,
-            node.position.z
-        )
+        // Position relative to the tweet node (not absolute world position)
+        interactionNode.position = SCNVector3(0, interactionOffset, 0)
         
         // Make it face the camera (billboard)
         interactionNode.constraints = [SCNBillboardConstraint()]
@@ -1462,8 +1637,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Enable hit testing for this node
         interactionNode.isHidden = false
         
-        // Add to the scene
-        sceneView.scene.rootNode.addChildNode(interactionNode)
+        // Add as child of the tweet node so they move together
+        node.addChildNode(interactionNode)
         
         // Store reference with the node for cleanup
         interactionNode.name = "interaction_\(tweet.id)"
@@ -1489,14 +1664,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let interactionNodeName = "interaction_\(tweetId)"
             
             // Find and remove the interaction node from the scene
-            for node in sceneView.scene.rootNode.childNodes {
+            // Now searching in all nodes since interaction nodes are children of tweet nodes
+            sceneView.scene.rootNode.enumerateChildNodes { (node, _) in
                 if node.name == interactionNodeName {
                     // Add fade-out animation
                     let fadeAction = SCNAction.fadeOut(duration: 0.3)
                     let removeAction = SCNAction.removeFromParentNode()
                     let sequence = SCNAction.sequence([fadeAction, removeAction])
                     node.runAction(sequence)
-                    break
                 }
             }
         }
@@ -1875,6 +2050,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     // MARK: - ARSCNViewDelegate
+    func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        updateGuidanceMessage()
+    }
+    
     func session(_ session: ARSession, didFailWithError error: Error) {
         // Present an error message to the user
     }

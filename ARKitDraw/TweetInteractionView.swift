@@ -37,21 +37,23 @@ class TweetInteractionView: UIView {
         stackView.spacing = 8
         stackView.translatesAutoresizingMaskIntoConstraints = false
         
-        // Configure like button
-        likeButton.setImage(UIImage(systemName: "heart"), for: .normal)
+        // Configure like button (3x larger)
+        let heartImage = UIImage(systemName: "heart")
+        let largeHeartImage = heartImage?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 36, weight: .medium))
+        likeButton.setImage(largeHeartImage, for: .normal)
         likeButton.tintColor = .white
-        likeButton.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
         likeButton.addTarget(self, action: #selector(likeButtonTapped), for: .touchUpInside)
         
-        // Configure comment button
-        commentButton.setImage(UIImage(systemName: "bubble.left"), for: .normal)
+        // Configure comment button (3x larger)
+        let commentImage = UIImage(systemName: "bubble.left")
+        let largeCommentImage = commentImage?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 36, weight: .medium))
+        commentButton.setImage(largeCommentImage, for: .normal)
         commentButton.tintColor = .white
-        commentButton.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
         commentButton.addTarget(self, action: #selector(commentButtonTapped), for: .touchUpInside)
         
-        // Configure comment count label
+        // Configure comment count label (3x larger)
         commentCountLabel.textColor = .white
-        commentCountLabel.font = UIFont.systemFont(ofSize: 10, weight: .medium)
+        commentCountLabel.font = UIFont.systemFont(ofSize: 30, weight: .medium) // 10 * 3 = 30
         commentCountLabel.textAlignment = .center
         
         // Add subviews
@@ -68,8 +70,8 @@ class TweetInteractionView: UIView {
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
             
-            likeButton.heightAnchor.constraint(equalToConstant: 24),
-            commentButton.heightAnchor.constraint(equalToConstant: 24)
+            likeButton.heightAnchor.constraint(equalToConstant: 72), // 24 * 3 = 72
+            commentButton.heightAnchor.constraint(equalToConstant: 72) // 24 * 3 = 72
         ])
     }
     
