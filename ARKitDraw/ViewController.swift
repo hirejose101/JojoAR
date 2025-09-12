@@ -755,7 +755,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Get all tweets within 20m that haven't been rendered yet
         let tweetsToRender = nearbyTweets.filter { tweet in
-            !renderedNearbyTweetIds.contains(tweet.id)
+            let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
+            let distance = currentLoc.distance(from: tweetLocation)
+            return !renderedNearbyTweetIds.contains(tweet.id) && distance <= 20.0
         }
         
         print("🎯 Tweets to render: \(tweetsToRender.count)")
@@ -767,7 +769,17 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             print("📱 Rendering tweet: '\(tweet.text)' at distance: \(Int(distance))m")
             
-            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: distance)
+            // Use screen position for better discovery experience
+            let screenRelativePosition = calculatePositionFromScreenCoordinates(
+                screenX: tweet.screenPositionX,
+                screenY: tweet.screenPositionY
+            )
+            
+            // Debug logging for tweet discovery
+            print("🔍 Tweet '\(tweet.text)' screen position: (\(tweet.screenPositionX), \(tweet.screenPositionY))")
+            print("🔍 Calculated 3D position: \(screenRelativePosition)")
+            
+            let textNode = createTextNode(text: tweet.text, position: screenRelativePosition, distance: distance)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
             sceneView.scene.rootNode.addChildNode(textNode)
@@ -977,7 +989,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        // Always allow auto-loading for dynamic tweet rendering as user walks
+        // Clear rendered tweets cache whenever we fetch new tweets
+        // This allows new tweets to render while keeping old tweets visible in AR
+        clearRenderedTweetsCache()
         
         firebaseService.fetchNearbyTweets(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude, radius: 20) { [weak self] tweets, error in
             if let error = error {
@@ -1293,6 +1307,65 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         scene.rootNode.addChildNode(lightNode)
         
         print("💡 Modern lighting configured for neon effects")
+    }
+    
+    func calculatePositionFromScreenCoordinates(screenX: Float, screenY: Float) -> SCNVector3 {
+        guard let frame = sceneView.session.currentFrame else {
+            print("🔍 No AR frame available, using fallback position")
+            return SCNVector3(0, 0, -2) // Fallback position
+        }
+        
+        let cameraTransform = frame.camera.transform
+        let cameraPosition = SCNVector3(
+            cameraTransform.columns.3.x,
+            cameraTransform.columns.3.y - 0.4,  // Lower camera position by 0.4m (15 inches)
+            cameraTransform.columns.3.z
+        )
+        
+        print("🔍 Camera position: \(cameraPosition)")
+        print("🔍 Input screen coordinates: (\(screenX), \(screenY))")
+        
+        // Get camera forward direction
+        let forward = SCNVector3(
+            -cameraTransform.columns.2.x,
+            -cameraTransform.columns.2.y,
+            -cameraTransform.columns.2.z
+        )
+        
+        // Get camera right direction
+        let right = SCNVector3(
+            cameraTransform.columns.0.x,
+            cameraTransform.columns.0.y,
+            cameraTransform.columns.0.z
+        )
+        
+        // Get camera up direction
+        let up = SCNVector3(
+            cameraTransform.columns.1.x,
+            cameraTransform.columns.1.y,
+            cameraTransform.columns.1.z
+        )
+        
+        // Convert screen coordinates to 3D offset
+        let horizontalSpread: Float = 1.0  // How far left/right tweets can appear
+        let verticalSpread: Float = 0.5    // How far up/down tweets can appear
+        let distanceInFront: Float = 2.0   // Distance in front of camera
+        
+        let offsetX = screenX * horizontalSpread
+        let offsetY = screenY * verticalSpread - 0.4  // Lower tweets by 0.4m (15 inches)
+        let offsetZ = distanceInFront
+        
+        // Calculate final position
+        let finalPosition = SCNVector3(
+            cameraPosition.x + right.x * offsetX + up.x * offsetY + forward.x * offsetZ,
+            cameraPosition.y + right.y * offsetX + up.y * offsetY + forward.y * offsetZ,
+            cameraPosition.z + right.z * offsetX + up.z * offsetY + forward.z * offsetZ
+        )
+        
+        print("🔍 Calculated offsets: (\(offsetX), \(offsetY), \(offsetZ))")
+        print("🔍 Final 3D position: \(finalPosition)")
+        
+        return finalPosition
     }
     
     func createTextNode(text: String, position: SCNVector3, distance: Double) -> SCNNode {
@@ -1806,8 +1879,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let worldPosition = hitTestResult.worldTransform.columns.3
         let tweetPosition = SCNVector3(worldPosition.x, worldPosition.y, worldPosition.z)
         
-        // Create and save persistent tweet
-        savePersistentTweet(text: text, position: tweetPosition)
+        // Convert screen tap to normalized coordinates (-1 to 1)
+        let normalizedX = (location.x / sceneView.bounds.width) * 2 - 1
+        let normalizedY = (location.y / sceneView.bounds.height) * 2 - 1
+        let screenPosition = CGPoint(x: normalizedX, y: normalizedY)
+        
+        // Debug logging for tweet creation
+        print("🔍 Screen tap at: \(location)")
+        print("🔍 Normalized coordinates: (\(normalizedX), \(normalizedY))")
+        print("🔍 Screen position stored: \(screenPosition)")
+        
+        // Create and save persistent tweet with screen position
+        savePersistentTweet(text: text, position: tweetPosition, screenPosition: screenPosition)
         
         // Create visual node
         let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0)
@@ -1849,7 +1932,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         sceneView.scene.rootNode.addChildNode(textNode)
     }
     
-    func savePersistentTweet(text: String, position: SCNVector3) {
+    func savePersistentTweet(text: String, position: SCNVector3, screenPosition: CGPoint = CGPoint(x: 0, y: 0)) {
         // Use authenticated user ID if available, otherwise fall back to anonymous ID
         let userId = firebaseService.getCurrentUserId() ?? currentUserId
         
@@ -1870,7 +1953,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             timestamp: Date(),
             isPublic: true,
             likes: [],
-            comments: []
+            comments: [],
+            screenPosition: screenPosition
         )
         
         firebaseService.saveTweet(tweet) { [weak self] error in

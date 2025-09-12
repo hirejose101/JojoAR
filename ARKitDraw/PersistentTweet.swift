@@ -16,8 +16,10 @@ struct PersistentTweet: Codable {
     let isPublic: Bool
     let likes: [String] // Array of user IDs who liked this tweet
     let comments: [TweetComment] // Array of comments
+    let screenPositionX: Float  // -1.0 to 1.0 (left to right)
+    let screenPositionY: Float  // -1.0 to 1.0 (bottom to top)
     
-    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = []) {
+    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0)) {
         self.id = id
         self.text = text
         self.latitude = latitude
@@ -31,6 +33,8 @@ struct PersistentTweet: Codable {
         self.isPublic = isPublic
         self.likes = likes
         self.comments = comments
+        self.screenPositionX = Float(screenPosition.x)
+        self.screenPositionY = Float(screenPosition.y)
     }
     
     var worldPosition: SCNVector3 {

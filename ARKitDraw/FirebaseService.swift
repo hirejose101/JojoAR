@@ -135,6 +135,8 @@ class FirebaseService {
             "worldPositionX": tweet.worldPositionX,
             "worldPositionY": tweet.worldPositionY,
             "worldPositionZ": tweet.worldPositionZ,
+            "screenPositionX": tweet.screenPositionX,
+            "screenPositionY": tweet.screenPositionY,
             "timestamp": Timestamp(date: tweet.timestamp),
             "isPublic": tweet.isPublic,
             "likes": tweet.likes,
@@ -329,6 +331,11 @@ class FirebaseService {
         let altitude = data["altitude"] as? Double
         let worldPosition = SCNVector3(worldPositionX, worldPositionY, worldPositionZ)
         
+        // Parse screen position (with fallback for old tweets)
+        let screenPositionX = data["screenPositionX"] as? Float ?? 0.0
+        let screenPositionY = data["screenPositionY"] as? Float ?? 0.0
+        let screenPosition = CGPoint(x: CGFloat(screenPositionX), y: CGFloat(screenPositionY))
+        
         // Parse likes and comments
         let likes = data["likes"] as? [String] ?? []
         let commentsData = data["comments"] as? [[String: Any]] ?? []
@@ -351,7 +358,8 @@ class FirebaseService {
             timestamp: timestamp.dateValue(),
             isPublic: isPublic,
             likes: likes,
-            comments: comments
+            comments: comments,
+            screenPosition: screenPosition
         )
     }
     
