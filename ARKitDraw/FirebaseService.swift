@@ -156,6 +156,12 @@ class FirebaseService {
         }
     }
     
+    func deleteTweet(tweetId: String, completion: @escaping (Error?) -> Void) {
+        db.collection(tweetsCollection).document(tweetId).delete { error in
+            completion(error)
+        }
+    }
+    
     // MARK: - Like Management
     
     func toggleLike(tweetId: String, userId: String, completion: @escaping (Error?) -> Void) {

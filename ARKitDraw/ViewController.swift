@@ -286,7 +286,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     // Array to track all tweet nodes and their text
     private var tweetNodes: [SCNNode] = []
-    private var tweetTexts: [String] = []
+    private var userTweets: [PersistentTweet] = []
     
     // UI elements for tweet history
     private var historyButton: UIButton!
@@ -898,7 +898,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             userInfoLabel.text = "Please Sign In"
             
             // Clear local tweets when not authenticated
-            tweetTexts.removeAll()
+            userTweets.removeAll()
             tweetNodes.removeAll()
             
             // Update history button text and refresh table view
@@ -927,7 +927,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         isLoadingUserTweets = true
         
         // Clear existing local tweets
-        tweetTexts.removeAll()
+        userTweets.removeAll()
         tweetNodes.removeAll()
         
         // Fetch user's tweets from Firebase
@@ -942,10 +942,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let userTweets = tweets.filter { $0.userId == userId }
             
             DispatchQueue.main.async {
-                // Add user's tweets to local arrays
-                for tweet in userTweets {
-                    self?.tweetTexts.append(tweet.text)
-                }
+                // Store full tweet objects
+                self?.userTweets = userTweets
                 
                 // Update history button text and refresh the history table view
                 self?.updateHistoryButtonText()
@@ -1509,7 +1507,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         guard let historyButton = historyButton else { return }
         
         if isUserAuthenticated {
-            let tweetCount = tweetTexts.count
+            let tweetCount = userTweets.count
             historyButton.setTitle("History (\(tweetCount))", for: .normal)
         } else {
             historyButton.setTitle("History", for: .normal)
@@ -1969,7 +1967,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 print("Tweet saved successfully")
                 // Add to local arrays for history
                 DispatchQueue.main.async {
-                    self?.tweetTexts.append(text)
+                    self?.userTweets.append(tweet)
                     
                     // Update history button text and refresh table view
                     self?.refreshTweetHistoryDisplay()
@@ -2001,28 +1999,59 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func deleteTweet(at index: Int) {
-        guard index < tweetNodes.count && index < tweetTexts.count else { return }
+        print("🗑️ deleteTweet called with index: \(index)")
+        print("🗑️ userTweets.count: \(userTweets.count)")
         
-        // Remove from arrays
-        let nodeToRemove = tweetNodes.remove(at: index)
-        tweetTexts.remove(at: index)
+        guard index < userTweets.count else { 
+            print("❌ Delete failed: index \(index) out of bounds for userTweets")
+            return 
+        }
         
-        // Add fade out animation
-        let fadeAction = SCNAction.fadeOut(duration: 0.3)
-        let removeAction = SCNAction.removeFromParentNode()
-        let sequence = SCNAction.sequence([fadeAction, removeAction])
-        nodeToRemove.runAction(sequence)
+        let tweetToDelete = userTweets[index]
+        print("🗑️ Deleting tweet: \(tweetToDelete.text) with ID: \(tweetToDelete.id)")
         
-        // Update history button text and reload table view
-        updateHistoryButtonText()
-        historyTableView.reloadData()
+        // Delete from Firebase first
+        firebaseService.deleteTweet(tweetId: tweetToDelete.id) { [weak self] error in
+            if let error = error {
+                print("❌ Error deleting tweet from Firebase: \(error)")
+                DispatchQueue.main.async {
+                    let alert = UIAlertController(title: "Error", message: "Failed to delete tweet from server. Please try again.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(alert, animated: true)
+                }
+                return
+            }
+            
+            print("✅ Tweet deleted from Firebase successfully")
+            
+            DispatchQueue.main.async {
+                // Remove from local array
+                self?.userTweets.remove(at: index)
+                
+                // Remove from 3D scene if it exists
+                if index < self?.tweetNodes.count ?? 0 {
+                    let nodeToRemove = self?.tweetNodes.remove(at: index)
+                    let fadeAction = SCNAction.fadeOut(duration: 0.3)
+                    let removeAction = SCNAction.removeFromParentNode()
+                    let sequence = SCNAction.sequence([fadeAction, removeAction])
+                    nodeToRemove?.runAction(sequence)
+                }
+                
+                print("🗑️ After removal - userTweets.count: \(self?.userTweets.count ?? 0)")
+                
+                // Update UI
+                self?.updateHistoryButtonText()
+                self?.historyTableView.reloadData()
+                print("✅ Delete completed and table reloaded")
+            }
+        }
     }
     
     // MARK: - UITableViewDataSource
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if isUserAuthenticated {
             // Show tweets + sign out button
-            return tweetTexts.count + 1
+            return userTweets.count + 1
         } else {
             // Show sign-in button as first row when not authenticated
             return 1
@@ -2033,17 +2062,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath)
         
         if isUserAuthenticated {
-            if indexPath.row < tweetTexts.count {
+            if indexPath.row < userTweets.count {
                 // Show tweet content
-                cell.textLabel?.text = tweetTexts[indexPath.row]
-                cell.textLabel?.textColor = UIColor.systemGreen
+                cell.textLabel?.text = userTweets[indexPath.row].text
+                cell.textLabel?.textColor = UIColor.white
                 cell.textLabel?.font = getCustomFont(size: 16)
-                cell.backgroundColor = UIColor.clear
+                cell.textLabel?.textAlignment = .left
+                cell.backgroundColor = UIColor.black
                 cell.selectionStyle = .none
                 
                 // Style the cell background
                 let backgroundView = UIView()
-                backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+                backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.8)
                 backgroundView.layer.cornerRadius = 8
                 backgroundView.layer.borderWidth = 1
                 backgroundView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.3).cgColor
@@ -2101,6 +2131,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     @objc func deleteButtonTapped(_ sender: UIButton) {
         let index = sender.tag
+        print("🗑️ Delete button tapped! Index: \(index)")
+        print("🗑️ Tweet text at index \(index): \(userTweets[index].text)")
+        print("🗑️ Total tweets before delete: \(userTweets.count)")
         deleteTweet(at: index)
     }
     
@@ -2109,7 +2142,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         tableView.deselectRow(at: indexPath, animated: true)
         
         if isUserAuthenticated {
-            if indexPath.row == tweetTexts.count {
+            if indexPath.row == userTweets.count {
                 // Sign-out button tapped
                 showSignOutConfirmation()
             }
@@ -2170,7 +2203,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 // Find the tweet text from our arrays
                 var tweetText = ""
                 if let index = tweetNodes.firstIndex(where: { $0.name == nodeName }) {
-                    tweetText = tweetTexts[index]
+                    // Check if this is one of our user tweets
+                    if index < userTweets.count {
+                        tweetText = userTweets[index].text
+                    } else {
+                        // Fallback to getting text from the node itself
+                        for childNode in node.childNodes {
+                            if let textGeometry = childNode.geometry as? SCNText {
+                                tweetText = textGeometry.string as? String ?? ""
+                                break
+                            }
+                        }
+                    }
                 } else {
                     // If not in our arrays, try to get from the node's child text
                     for childNode in node.childNodes {
