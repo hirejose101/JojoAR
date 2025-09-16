@@ -325,6 +325,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // Tap to place functionality
     private var pendingTweetText: String?
     private var isWaitingForTap = false
+    private var pendingTweetColor: UIColor = UIColor.black
     
     // Firebase and Location services
     private var firebaseService: FirebaseService!
@@ -607,7 +608,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Position mini-map at bottom-right corner
         NSLayoutConstraint.activate([
-            miniMapView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            miniMapView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -100),
             miniMapView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             miniMapView.widthAnchor.constraint(equalToConstant: 160),
             miniMapView.heightAnchor.constraint(equalToConstant: 160)
@@ -683,14 +684,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create See Tweets button
         seeTweetsButton = UIButton(type: .system)
         seeTweetsButton.setTitle("See Tweets", for: .normal)
-        seeTweetsButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        seeTweetsButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
         seeTweetsButton.setTitleColor(.white, for: .normal)
         seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         seeTweetsButton.layer.cornerRadius = 12
-        seeTweetsButton.layer.shadowColor = UIColor.black.cgColor
-        seeTweetsButton.layer.shadowOffset = CGSize(width: 0, height: 2)
-        seeTweetsButton.layer.shadowOpacity = 0.3
-        seeTweetsButton.layer.shadowRadius = 4
+        seeTweetsButton.layer.shadowColor = UIColor.systemGreen.cgColor
+        seeTweetsButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        seeTweetsButton.layer.shadowOpacity = 0.6
+        seeTweetsButton.layer.shadowRadius = 8
         seeTweetsButton.isHidden = false // Always visible
         seeTweetsButton.addTarget(self, action: #selector(seeTweetsButtonTapped), for: .touchUpInside)
         seeTweetsButton.translatesAutoresizingMaskIntoConstraints = false
@@ -762,6 +763,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         print("🎯 Tweets to render: \(tweetsToRender.count)")
         
+        if tweetsToRender.isEmpty {
+            print("ℹ️ All nearby tweets are already rendered. No new tweets to show.")
+            return
+        }
+        
         // Render each tweet
         for tweet in tweetsToRender {
             let tweetLocation = CLLocation(latitude: tweet.latitude, longitude: tweet.longitude)
@@ -779,18 +785,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             print("🔍 Tweet '\(tweet.text)' screen position: (\(tweet.screenPositionX), \(tweet.screenPositionY))")
             print("🔍 Calculated 3D position: \(screenRelativePosition)")
             
-            let textNode = createTextNode(text: tweet.text, position: screenRelativePosition, distance: distance)
+            let textNode = createTextNode(text: tweet.text, position: screenRelativePosition, distance: distance, color: tweet.color)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
             sceneView.scene.rootNode.addChildNode(textNode)
             renderedNearbyTweetIds.insert(tweet.id)
         }
         
-        if !tweetsToRender.isEmpty {
-            print("✨ Successfully rendered \(tweetsToRender.count) tweets in AR")
-        } else {
-            print("⚠️ No tweets to render - all nearby tweets may already be rendered")
-        }
+        print("✨ Successfully rendered \(tweetsToRender.count) new tweets in AR")
     }
     
     func updateGuidanceMessage() {
@@ -987,9 +989,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        // Clear rendered tweets cache whenever we fetch new tweets
-        // This allows new tweets to render while keeping old tweets visible in AR
-        clearRenderedTweetsCache()
+        // Don't clear rendered tweets cache automatically
+        // This prevents re-rendering of already visible tweets
         
         firebaseService.fetchNearbyTweets(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude, radius: 20) { [weak self] tweets, error in
             if let error = error {
@@ -1128,7 +1129,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Create nodes for new tweets (keep existing ones)
         for tweet in tweets {
-            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.0)
+            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.0, color: tweet.color)
             textNode.name = "nearby_tweet_\(tweet.id)"
             
             // All tweets use the same green iMessage style with white text
@@ -1253,6 +1254,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ]
         
         let newColor = colors[sender.tag]
+        
+        // Set the pending tweet color (for the next tweet to be created)
+        pendingTweetColor = newColor
+        
+        // Also update the global color for backward compatibility
         selectedBorderColor = newColor
         
         // Update color picker button to show selected color
@@ -1262,7 +1268,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Hide color picker
         hideColorPicker()
         
-        print("🎨 Selected border color: \(newColor) - Saved to UserDefaults")
+        print("🎨 Selected color for next tweet: \(newColor)")
     }
     
     // Helper function to get custom font with fallback
@@ -1366,7 +1372,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         return finalPosition
     }
     
-    func createTextNode(text: String, position: SCNVector3, distance: Double) -> SCNNode {
+    func createTextNode(text: String, position: SCNVector3, distance: Double, color: UIColor = UIColor.black) -> SCNNode {
         // Create street sign-style AR tweet
         let tweetSign = makeStreetSignNode(
             text: text,
@@ -1375,7 +1381,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             horizontalPaddingMeters: 0.04,
             verticalPaddingMeters: 0.024,
             textColor: .white,
-            boardColor: selectedBorderColor, // Use the selected color for the board
+            boardColor: color, // Use the specific color for this tweet
             cornerRadiusMeters: 0.01,
             billboard: true
         )
@@ -1887,11 +1893,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         print("🔍 Normalized coordinates: (\(normalizedX), \(normalizedY))")
         print("🔍 Screen position stored: \(screenPosition)")
         
-        // Create and save persistent tweet with screen position
-        savePersistentTweet(text: text, position: tweetPosition, screenPosition: screenPosition)
+        // Create and save persistent tweet with screen position and color
+        savePersistentTweet(text: text, position: tweetPosition, screenPosition: screenPosition, color: pendingTweetColor)
         
-        // Create visual node
-        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0)
+        // Create visual node with the selected color
+        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0, color: pendingTweetColor)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node (text will be added in savePersistentTweet)
@@ -1916,11 +1922,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             cameraPosition.z + (dir.z * 0.5)
         )
         
-        // Create and save persistent tweet
-        savePersistentTweet(text: text, position: tweetPosition)
+        // Create and save persistent tweet with color
+        savePersistentTweet(text: text, position: tweetPosition, color: pendingTweetColor)
         
-        // Create visual node
-        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0)
+        // Create visual node with the selected color
+        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0, color: pendingTweetColor)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node (text will be added in savePersistentTweet)
@@ -1930,7 +1936,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         sceneView.scene.rootNode.addChildNode(textNode)
     }
     
-    func savePersistentTweet(text: String, position: SCNVector3, screenPosition: CGPoint = CGPoint(x: 0, y: 0)) {
+    func savePersistentTweet(text: String, position: SCNVector3, screenPosition: CGPoint = CGPoint(x: 0, y: 0), color: UIColor = UIColor.black) {
         // Use authenticated user ID if available, otherwise fall back to anonymous ID
         let userId = firebaseService.getCurrentUserId() ?? currentUserId
         
@@ -1952,7 +1958,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             isPublic: true,
             likes: [],
             comments: [],
-            screenPosition: screenPosition
+            screenPosition: screenPosition,
+            color: color
         )
         
         firebaseService.saveTweet(tweet) { [weak self] error in
@@ -2226,8 +2233,22 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 }
                 
                 if !tweetText.isEmpty {
-                    // Create a new text node with the updated design
-                    let newTextNode = createTextNode(text: tweetText, position: node.position, distance: 0.0)
+                    // Find the tweet color from our arrays
+                    var tweetColor = UIColor.black // Default color
+                    if let index = tweetNodes.firstIndex(where: { $0.name == nodeName }) {
+                        // Check if this is one of our user tweets
+                        if index < userTweets.count {
+                            tweetColor = userTweets[index].color
+                        }
+                    } else {
+                        // For nearby tweets, find the color
+                        if let nearbyTweet = nearbyTweets.first(where: { "nearby_tweet_\($0.id)" == nodeName }) {
+                            tweetColor = nearbyTweet.color
+                        }
+                    }
+                    
+                    // Create a new text node with the updated design and correct color
+                    let newTextNode = createTextNode(text: tweetText, position: node.position, distance: 0.0, color: tweetColor)
                     newTextNode.name = nodeName // Keep the original name
                     
                     // Remove the old node

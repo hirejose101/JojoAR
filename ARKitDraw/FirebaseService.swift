@@ -137,6 +137,10 @@ class FirebaseService {
             "worldPositionZ": tweet.worldPositionZ,
             "screenPositionX": tweet.screenPositionX,
             "screenPositionY": tweet.screenPositionY,
+            "colorRed": tweet.colorRed,
+            "colorGreen": tweet.colorGreen,
+            "colorBlue": tweet.colorBlue,
+            "colorAlpha": tweet.colorAlpha,
             "timestamp": Timestamp(date: tweet.timestamp),
             "isPublic": tweet.isPublic,
             "likes": tweet.likes,
@@ -342,6 +346,13 @@ class FirebaseService {
         let screenPositionY = data["screenPositionY"] as? Float ?? 0.0
         let screenPosition = CGPoint(x: CGFloat(screenPositionX), y: CGFloat(screenPositionY))
         
+        // Parse color components (with fallback for old tweets)
+        let colorRed = data["colorRed"] as? Float ?? 0.0
+        let colorGreen = data["colorGreen"] as? Float ?? 0.0
+        let colorBlue = data["colorBlue"] as? Float ?? 0.0
+        let colorAlpha = data["colorAlpha"] as? Float ?? 1.0
+        let color = UIColor(red: CGFloat(colorRed), green: CGFloat(colorGreen), blue: CGFloat(colorBlue), alpha: CGFloat(colorAlpha))
+        
         // Parse likes and comments
         let likes = data["likes"] as? [String] ?? []
         let commentsData = data["comments"] as? [[String: Any]] ?? []
@@ -365,7 +376,8 @@ class FirebaseService {
             isPublic: isPublic,
             likes: likes,
             comments: comments,
-            screenPosition: screenPosition
+            screenPosition: screenPosition,
+            color: color
         )
     }
     

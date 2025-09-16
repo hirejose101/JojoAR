@@ -18,8 +18,12 @@ struct PersistentTweet: Codable {
     let comments: [TweetComment] // Array of comments
     let screenPositionX: Float  // -1.0 to 1.0 (left to right)
     let screenPositionY: Float  // -1.0 to 1.0 (bottom to top)
+    let colorRed: Float         // Red component of the color
+    let colorGreen: Float       // Green component of the color
+    let colorBlue: Float        // Blue component of the color
+    let colorAlpha: Float       // Alpha component of the color
     
-    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0)) {
+    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0), color: UIColor = UIColor.black) {
         self.id = id
         self.text = text
         self.latitude = latitude
@@ -35,6 +39,18 @@ struct PersistentTweet: Codable {
         self.comments = comments
         self.screenPositionX = Float(screenPosition.x)
         self.screenPositionY = Float(screenPosition.y)
+        
+        // Convert UIColor to components
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        
+        self.colorRed = Float(red)
+        self.colorGreen = Float(green)
+        self.colorBlue = Float(blue)
+        self.colorAlpha = Float(alpha)
     }
     
     var worldPosition: SCNVector3 {
@@ -55,6 +71,10 @@ struct PersistentTweet: Codable {
     
     func isLikedBy(userId: String) -> Bool {
         return likes.contains(userId)
+    }
+    
+    var color: UIColor {
+        return UIColor(red: CGFloat(colorRed), green: CGFloat(colorGreen), blue: CGFloat(colorBlue), alpha: CGFloat(colorAlpha))
     }
 }
 
