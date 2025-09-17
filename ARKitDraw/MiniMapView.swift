@@ -67,7 +67,8 @@ class MiniMapView: UIView {
         mapView.showsScale = false
         mapView.showsTraffic = false
         mapView.showsBuildings = false
-        mapView.showsPointsOfInterest = false
+        mapView.pointOfInterestFilter = .excludingAll
+        mapView.delegate = self  // THIS IS CRITICAL - enables viewFor method to work
         containerView.addSubview(mapView)
         
         // Set initial region (will be updated when location is available)
@@ -119,11 +120,11 @@ class MiniMapView: UIView {
         
         print("🗺️ MiniMapView: Cleared existing annotations")
         
-        // Add new tweet annotations (blue)
+        // Add new tweet annotations (blue dots only - no text to preserve AR discovery)
         for (index, tweet) in tweets.enumerated() {
             let annotation = MKPointAnnotation()
             annotation.coordinate = CLLocationCoordinate2D(latitude: tweet.latitude, longitude: tweet.longitude)
-            annotation.title = tweet.text
+            annotation.title = "Tweet" // Set title so viewFor can identify it
             mapView.addAnnotation(annotation)
             tweetAnnotations[tweet.id] = annotation
             
@@ -143,11 +144,11 @@ class MiniMapView: UIView {
                 }
             }
             
-            // Add new tweet annotations to full-screen map
+            // Add new tweet annotations to full-screen map (also no text - just circles)
             for tweet in tweets {
                 let annotation = MKPointAnnotation()
                 annotation.coordinate = CLLocationCoordinate2D(latitude: tweet.latitude, longitude: tweet.longitude)
-                annotation.title = tweet.text
+                annotation.title = "Tweet" // No tweet text - just circles
                 fullScreenMap.addAnnotation(annotation)
                 print("🗺️ MiniMapView: Added annotation to full-screen map for tweet '\(tweet.text)'")
             }
@@ -187,13 +188,15 @@ extension MiniMapView: MKMapViewDelegate {
         // Configure annotation view
         annotationView?.annotation = annotation
         
+        // Hide text labels - only show custom images
+        annotationView?.canShowCallout = false        
         // Set different colors for user vs tweets
         if annotation.title == "You" {
             // User location - green circle
             annotationView?.image = createCircleImage(size: 12, color: UIColor.green)
         } else {
-            // Tweet location - blue circle
-            annotationView?.image = createCircleImage(size: 8, color: UIColor.blue)
+            // Tweet location - larger blue circle (no text shown)
+            annotationView?.image = createCircleImage(size: 16, color: UIColor.blue)
         }
         
         return annotationView
@@ -246,7 +249,7 @@ extension MiniMapView: MKMapViewDelegate {
         fullScreenMapView?.showsScale = true
         fullScreenMapView?.showsTraffic = false
         fullScreenMapView?.showsBuildings = false
-        fullScreenMapView?.showsPointsOfInterest = false
+        fullScreenMapView?.pointOfInterestFilter = .excludingAll
         fullScreenMapView?.delegate = self
         
         // Add close button
@@ -364,7 +367,6 @@ extension MiniMapView: MKMapViewDelegate {
         
         // Notify delegate to revert to original location tweets
         if let originalLocation = originalUserLocation {
-            let originalCLLocation = CLLocation(latitude: originalLocation.latitude, longitude: originalLocation.longitude)
             searchDelegate?.searchForTweetsInArea(center: originalLocation, visibleRegion: MKCoordinateRegion())
         }
         
@@ -378,4 +380,4 @@ extension MiniMapView: MKMapViewDelegate {
             self.isFullScreen = false
         }
     }
-} 
+}

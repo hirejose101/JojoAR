@@ -1106,51 +1106,19 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     private func renderTweetsForNewArea(_ tweets: [PersistentTweet]) {
-        // For searched areas, show ALL tweets in that area (not just new ones)
-        // This gives users a complete view of what's available
+        // For searched areas, ONLY show tweets on the map
+        // Do NOT render 3D nodes - let the normal nearby tweet system handle that
         
-        // Remove existing tweets from the searched area to avoid duplicates
-        let searchedTweetIds = Set(tweets.map { $0.id })
+        print("🔍 Showing \(tweets.count) tweets from searched area on map only")
         
-        // Remove existing nodes for tweets in this area
-        for node in sceneView.scene.rootNode.childNodes {
-            if let nodeName = node.name,
-               nodeName.hasPrefix("nearby_tweet_"),
-               let tweetId = nodeName.replacingOccurrences(of: "nearby_tweet_", with: "").isEmpty ? nil : nodeName.replacingOccurrences(of: "nearby_tweet_", with: ""),
-               searchedTweetIds.contains(tweetId) {
-                node.removeFromParentNode()
-            }
-        }
-        
-        // Clear these IDs from rendered set since we're re-rendering them
-        for tweetId in searchedTweetIds {
-            renderedNearbyTweetIds.remove(tweetId)
-        }
-        
-        // Create nodes for new tweets (keep existing ones)
-        for tweet in tweets {
-            let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.0, color: tweet.color)
-            textNode.name = "nearby_tweet_\(tweet.id)"
-            
-            // All tweets use the same green iMessage style with white text
-            // No color variations needed - consistent design throughout
-            
-            sceneView.scene.rootNode.addChildNode(textNode)
-            
-            // Mark as rendered
-            renderedNearbyTweetIds.insert(tweet.id)
-        }
-        
-        print("🔍 Rendered \(tweets.count) tweets in searched area (total rendered: \(renderedNearbyTweetIds.count))")
-        
-        // Update mini-map with the searched tweets
+        // Update mini-map with ALL searched tweets (for map display)
         print("🗺️ Updating mini-map with \(tweets.count) searched tweets")
         miniMapView?.updateNearbyTweets(tweets)
         print("🗺️ Mini-map update completed")
         
-        // Also update the nearbyTweets array to keep it in sync
-        nearbyTweets = tweets
-        print("📱 Updated nearbyTweets array with \(tweets.count) tweets")
+        // DON'T update nearbyTweets array - keep it for actual nearby tweets only
+        // DON'T render any 3D nodes - let loadNearbyTweets() handle that based on proximity
+        print("🔍 Map updated - 3D rendering will be handled by normal nearby tweet system")
     }
     
     // Helper function to clear rendered tweets cache (useful for testing)
