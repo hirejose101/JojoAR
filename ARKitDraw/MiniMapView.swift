@@ -190,25 +190,41 @@ extension MiniMapView: MKMapViewDelegate {
         
         // Hide text labels - only show custom images
         annotationView?.canShowCallout = false        
-        // Set different colors for user vs tweets
+        // Set different pins for user vs tweets
         if annotation.title == "You" {
-            // User location - green circle
-            annotationView?.image = createCircleImage(size: 12, color: UIColor.green)
+            // User location - white pin
+            annotationView?.image = createPinImage(size: 20, color: UIColor.white)
         } else {
-            // Tweet location - larger blue circle (no text shown)
-            annotationView?.image = createCircleImage(size: 16, color: UIColor.blue)
+            // Tweet location - green pin
+            annotationView?.image = createPinImage(size: 20, color: UIColor.green)
         }
         
         return annotationView
     }
     
-    private func createCircleImage(size: CGFloat, color: UIColor) -> UIImage {
-        let rect = CGRect(x: 0, y: 0, width: size, height: size)
+    private func createPinImage(size: CGFloat, color: UIColor) -> UIImage {
+        let pinSize = size
+        let rect = CGRect(x: 0, y: 0, width: pinSize, height: pinSize)
         UIGraphicsBeginImageContextWithOptions(rect.size, false, 0)
         
         let context = UIGraphicsGetCurrentContext()
+        
+        // Draw pin shape (circle with a point at bottom)
+        let circleRect = CGRect(x: 2, y: 2, width: pinSize - 4, height: pinSize - 8)
+        let pointRect = CGRect(x: pinSize/2 - 2, y: pinSize - 6, width: 4, height: 6)
+        
+        // Draw main circle
         context?.setFillColor(color.cgColor)
-        context?.fillEllipse(in: rect)
+        context?.fillEllipse(in: circleRect)
+        
+        // Draw point at bottom
+        context?.fillEllipse(in: pointRect)
+        
+        // Add black border for contrast
+        context?.setStrokeColor(UIColor.black.cgColor)
+        context?.setLineWidth(1)
+        context?.strokeEllipse(in: circleRect)
+        context?.strokeEllipse(in: pointRect)
         
         let image = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
