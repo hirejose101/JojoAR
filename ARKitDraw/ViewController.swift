@@ -804,10 +804,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             guidanceLabel.isHidden = true
             
         case .limited(let reason):
-            // Tracking is poor, show guidance
-            guidanceLabel.text = "📱 Hold phone steadier for better tracking"
-            guidanceLabel.textColor = .orange
-            guidanceLabel.isHidden = false
+            // Tracking is poor, but no guidance message needed
+            guidanceLabel.isHidden = true
             
         case .notAvailable:
             // Tracking is very poor, show guidance
@@ -1747,7 +1745,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func handleCommentTapped(tweetId: String) {
         selectedTweetId = tweetId
-        showCommentInput()
+        
+        // First, check if there are existing comments and show them
+        showComments(for: tweetId)
     }
     
     func showCommentInput() {
@@ -1789,6 +1789,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 DispatchQueue.main.async {
                     self?.commentDisplayView?.configure(with: comments)
                     self?.commentDisplayView?.isHidden = false
+                    
+                    // Also show the input field so user can add new comments
+                    self?.showCommentInput()
                 }
             }
         }
@@ -1796,6 +1799,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func hideCommentDisplay() {
         commentDisplayView?.isHidden = true
+        hideCommentInput()
     }
     
     func updateTweetLikeState(tweetId: String) {
