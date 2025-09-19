@@ -358,6 +358,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // Prevent duplicate user tweet loading
     private var isLoadingUserTweets = false
     
+    // MARK: - Drawing Functionality
+    private var drawButton: UIButton!
+    private var isDrawingMode = false
+    private var currentDrawingNode: SCNNode?
+    private var drawingPoints: [SCNVector3] = []
+    private var isCurrentlyDrawing = false
+    private var lastCameraPosition: SCNVector3?
+    private var drawingStartTime: Date?
+    
     // MARK: - Like and Comment Functionality
     private var tweetInteractionViews: [String: TweetInteractionView] = [:]
     private var commentInputView: CommentInputView?
@@ -592,6 +601,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup See Tweets button
         setupSeeTweetsButton()
         
+        // Setup Draw button
+        setupDrawButton()
+        
         // Setup authentication UI after all UI elements are created
         setupAuthenticationUI()
         
@@ -707,10 +719,37 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
     }
     
+    func setupDrawButton() {
+        // Create Draw button
+        drawButton = UIButton(type: .system)
+        drawButton.setTitle("Draw", for: .normal)
+        drawButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        drawButton.setTitleColor(.white, for: .normal)
+        drawButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        drawButton.layer.cornerRadius = 12
+        drawButton.layer.shadowColor = UIColor.systemBlue.cgColor
+        drawButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        drawButton.layer.shadowOpacity = 0.6
+        drawButton.layer.shadowRadius = 8
+        drawButton.addTarget(self, action: #selector(drawButtonPressed), for: .touchDown)
+        drawButton.addTarget(self, action: #selector(drawButtonReleased), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        drawButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(drawButton)
+        
+        // Position to the left of See Tweets button
+        NSLayoutConstraint.activate([
+            drawButton.trailingAnchor.constraint(equalTo: seeTweetsButton.leadingAnchor, constant: -20),
+            drawButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            drawButton.widthAnchor.constraint(equalToConstant: 100),
+            drawButton.heightAnchor.constraint(equalToConstant: 50)
+        ])
+    }
+    
     func showTweetsDiscoveredNotification(count: Int) {
         let message = count == 1 ? "New tweet detected, Click 'See Tweets' button to view it" : "New tweets detected, Click 'See Tweets' button to view them"
         guidanceLabel.text = message
-        guidanceLabel.textColor = .blue
+        guidanceLabel.textColor = .white
         guidanceLabel.isHidden = false
         
         // Hide after 5 seconds
@@ -721,13 +760,48 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func showStabilityGuidance() {
         guidanceLabel.text = "Hold phone steady for a few secs"
-        guidanceLabel.textColor = .orange
+        guidanceLabel.textColor = .white
         guidanceLabel.isHidden = false
         
         // Hide after 3 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             self.guidanceLabel.isHidden = true
         }
+    }
+    
+    @objc func drawButtonPressed() {
+        // Button pressed down - start drawing
+        print("🎨 Draw button PRESSED - Starting drawing")
+        
+        isDrawingMode = true
+        drawButton.setTitle("Drawing...", for: .normal)
+        drawButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.9)
+        
+        // Show drawing guidance
+        guidanceLabel.text = "Move phone around to draw, release to stop"
+        guidanceLabel.textColor = .white
+        guidanceLabel.isHidden = false
+        
+        // Hide after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            self.guidanceLabel.isHidden = true
+        }
+        
+        // Start camera-based drawing
+        startCameraDrawing()
+    }
+    
+    @objc func drawButtonReleased() {
+        // Button released - stop drawing
+        print("🎨 Draw button RELEASED - Stopping drawing")
+        
+        isDrawingMode = false
+        drawButton.setTitle("Draw", for: .normal)
+        drawButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        
+        // Finish current drawing if any
+        finishCurrentDrawing()
+        stopCameraDrawing()
     }
     
     @objc func seeTweetsButtonTapped() {
@@ -810,7 +884,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         case .notAvailable:
             // Tracking is very poor, show guidance
             guidanceLabel.text = "❌ Move to a brighter area with more features"
-            guidanceLabel.textColor = .red
+            guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
         }
     }
@@ -822,7 +896,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         case .normal:
             // Tracking is good, tweets should appear
             guidanceLabel.text = "✨ Nearby tweet detected!"
-            guidanceLabel.textColor = .green
+            guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
             
             // Hide after 2 seconds
@@ -833,13 +907,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         case .limited(let reason):
             // Tracking is poor, ask user to hold steady
             guidanceLabel.text = "📱 Hold phone steady to view nearby tweet"
-            guidanceLabel.textColor = .orange
+            guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
             
         case .notAvailable:
             // Tracking is very poor, ask user to move
             guidanceLabel.text = "❌ Move to a brighter area with more features"
-            guidanceLabel.textColor = .red
+            guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
         }
     }
@@ -1495,10 +1569,172 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
     }
     
-
+    // MARK: - Camera-Based Drawing Functions
+    
+    func startCameraDrawing() {
+        print("🎨 Starting camera-based drawing")
+        // Reset any existing drawing state
+        finishCurrentDrawing()
+        lastCameraPosition = nil
+        drawingStartTime = nil
+        
+        // Automatically start drawing when entering drawing mode
+        startNewCameraDrawing()
+    }
+    
+    func stopCameraDrawing() {
+        print("🎨 Stopping camera-based drawing")
+        finishCurrentDrawing()
+        lastCameraPosition = nil
+        drawingStartTime = nil
+    }
+    
+    
+    func startNewCameraDrawing() {
+        guard let pointOfView = sceneView.pointOfView else { return }
+        
+        finishCurrentDrawing()
+        isCurrentlyDrawing = true
+        drawingStartTime = Date()
+        
+        // Get current camera position
+        let cameraPosition = SCNVector3(
+            pointOfView.position.x,
+            pointOfView.position.y,
+            pointOfView.position.z
+        )
+        
+        drawingPoints = [cameraPosition]
+        lastCameraPosition = cameraPosition
+        
+        // Create a new drawing node
+        currentDrawingNode = SCNNode()
+        currentDrawingNode?.name = "drawing_\\(UUID().uuidString)"
+        sceneView.scene.rootNode.addChildNode(currentDrawingNode!)
+        
+        print("🎨 Started new camera drawing at: \(cameraPosition)")
+    }
+    
+    func updateCameraDrawing() {
+        guard isCurrentlyDrawing,
+              let drawingNode = currentDrawingNode,
+              let pointOfView = sceneView.pointOfView else { return }
+        
+        // Get current camera position
+        let currentCameraPosition = SCNVector3(
+            pointOfView.position.x,
+            pointOfView.position.y,
+            pointOfView.position.z
+        )
+        
+        // Only add point if camera moved significantly (larger threshold for smoother paint-like strokes)
+        if let lastPos = lastCameraPosition {
+            let distance = currentCameraPosition.distance(vector: lastPos)
+            if distance > 0.05 { // 5cm threshold for smoother paint-like strokes
+                addCameraPointToDrawing(currentCameraPosition)
+                lastCameraPosition = currentCameraPosition
+            }
+        } else {
+            lastCameraPosition = currentCameraPosition
+        }
+    }
+    
+    func addCameraPointToDrawing(_ position: SCNVector3) {
+        guard isCurrentlyDrawing, let drawingNode = currentDrawingNode else { return }
+        
+        drawingPoints.append(position)
+        
+        // If we have at least 2 points, create a line segment
+        if drawingPoints.count >= 2 {
+            let startPoint = drawingPoints[drawingPoints.count - 2]
+            let endPoint = drawingPoints[drawingPoints.count - 1]
+            let lineSegment = createDrawingLine(from: startPoint, to: endPoint)
+            drawingNode.addChildNode(lineSegment)
+        }
+    }
+    
+    func finishCurrentDrawing() {
+        if isCurrentlyDrawing {
+            isCurrentlyDrawing = false
+            currentDrawingNode = nil
+            drawingPoints.removeAll()
+            lastCameraPosition = nil
+            drawingStartTime = nil
+        }
+    }
+    
+    func createDrawingLine(from startPoint: SCNVector3, to endPoint: SCNVector3) -> SCNNode {
+        // Use SceneKit-only quad approach for thick strokes
+        let strokeWidth: Float = 0.01 // 1cm thick strokes
+        let strokeGeometry = createThickStrokeGeometry(from: startPoint, to: endPoint, width: strokeWidth)
+        let strokeNode = SCNNode(geometry: strokeGeometry)
+        
+        // Add billboard constraint to keep stroke facing camera
+        let billboardConstraint = SCNBillboardConstraint()
+        billboardConstraint.freeAxes = [.Y] // Only rotate around Y axis
+        strokeNode.constraints = [billboardConstraint]
+        
+        return strokeNode
+    }
+    
+    func createThickStrokeGeometry(from startPoint: SCNVector3, to endPoint: SCNVector3, width: Float) -> SCNGeometry {
+        // Calculate the direction vector and length
+        let direction = SCNVector3(
+            endPoint.x - startPoint.x,
+            endPoint.y - startPoint.y,
+            endPoint.z - startPoint.z
+        )
+        let length = sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+        
+        // Create vertices for a quad (4 vertices = 2 triangles)
+        let halfWidth = width / 2.0
+        
+        // For simplicity, we'll create a quad that extends in the Y direction
+        // The billboard constraint will make it face the camera
+        let vertices: [SCNVector3] = [
+            // First triangle
+            SCNVector3(startPoint.x - halfWidth, startPoint.y, startPoint.z),
+            SCNVector3(startPoint.x + halfWidth, startPoint.y, startPoint.z),
+            SCNVector3(endPoint.x - halfWidth, endPoint.y, endPoint.z),
+            // Second triangle (shared vertices)
+            SCNVector3(endPoint.x + halfWidth, endPoint.y, endPoint.z)
+        ]
+        
+        // Create vertex data
+        let vertexData = NSData(bytes: vertices, length: MemoryLayout<SCNVector3>.size * vertices.count) as Data
+        let vertexSource = SCNGeometrySource(data: vertexData,
+                                           semantic: .vertex,
+                                           vectorCount: vertices.count,
+                                           usesFloatComponents: true,
+                                           componentsPerVector: 3,
+                                           bytesPerComponent: MemoryLayout<Float>.size,
+                                           dataOffset: 0,
+                                           dataStride: MemoryLayout<SCNVector3>.stride)
+        
+        // Create indices for two triangles
+        let indices: [UInt32] = [
+            0, 1, 2,  // First triangle
+            1, 3, 2   // Second triangle
+        ]
+        
+        let element = SCNGeometryElement(indices: indices, primitiveType: .triangles)
+        let geometry = SCNGeometry(sources: [vertexSource], elements: [element])
+        
+        // Set up material
+        let material = SCNMaterial()
+        material.diffuse.contents = selectedBorderColor
+        material.lightingModel = .constant
+        material.isDoubleSided = true
+        material.emission.contents = selectedBorderColor
+        material.emission.intensity = 0.2
+        geometry.materials = [material]
+        
+        return geometry
+    }    
     
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
         let location = gesture.location(in: sceneView)
+        
         
         // Check if we're waiting to place a new tweet
         if isWaitingForTap, let tweetText = pendingTweetText {
@@ -2148,6 +2384,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // MARK: - ARSCNViewDelegate
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
         updateGuidanceMessage()
+    }
+    
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        // Update camera-based drawing when in drawing mode
+        if isDrawingMode && isCurrentlyDrawing {
+            updateCameraDrawing()
+        }
     }
     
     func session(_ session: ARSession, didFailWithError error: Error) {

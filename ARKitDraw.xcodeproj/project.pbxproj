@@ -22,6 +22,7 @@
 		43DC63942E39A24200734D1C /* PersistentTweet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43DC63932E39A24200734D1C /* PersistentTweet.swift */; };
 		43DC63962E39A4A900734D1C /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 43DC63952E39A4A900734D1C /* GoogleService-Info.plist */; };
 		43DC63982E39C85E00734D1C /* MiniMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43DC63972E39C85E00734D1C /* MiniMapView.swift */; };
+		43DC639A2E39C85F00734D1C /* SCNGeometryExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43DC63992E39C85F00734D1C /* SCNGeometryExtensions.swift */; };
 		DC9869581EE8D7BE007DDA39 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC9869571EE8D7BE007DDA39 /* AppDelegate.swift */; };
 		DC98695A1EE8D7BE007DDA39 /* art.scnassets in Resources */ = {isa = PBXBuildFile; fileRef = DC9869591EE8D7BE007DDA39 /* art.scnassets */; };
 		DC98695C1EE8D7BE007DDA39 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC98695B1EE8D7BE007DDA39 /* ViewController.swift */; };
@@ -42,6 +43,7 @@
 		43DC63932E39A24200734D1C /* PersistentTweet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistentTweet.swift; sourceTree = "<group>"; };
 		43DC63952E39A4A900734D1C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		43DC63972E39C85E00734D1C /* MiniMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniMapView.swift; sourceTree = "<group>"; };
+		43DC63992E39C85F00734D1C /* SCNGeometryExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SCNGeometryExtensions.swift; sourceTree = "<group>"; };
 		6A904C028CD1A33C29AB7DFB /* Pods_ARKitDraw.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_ARKitDraw.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC9869541EE8D7BE007DDA39 /* ARKitDraw.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ARKitDraw.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC9869571EE8D7BE007DDA39 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -114,6 +116,7 @@
 				43DC63912E39A21500734D1C /* LocationManager.swift */,
 				43DC63952E39A4A900734D1C /* GoogleService-Info.plist */,
 				43DC63972E39C85E00734D1C /* MiniMapView.swift */,
+				43DC63992E39C85F00734D1C /* SCNGeometryExtensions.swift */,
 			);
 			path = ARKitDraw;
 			sourceTree = "<group>";
@@ -204,6 +207,7 @@
 				43DC638E2E39A18C00734D1C /* FirebaseService.swift in Sources */,
 				43DC63922E39A21500734D1C /* LocationManager.swift in Sources */,
 				43DC63982E39C85E00734D1C /* MiniMapView.swift in Sources */,
+				43DC639A2E39C85F00734D1C /* SCNGeometryExtensions.swift in Sources */,
 				431375AE2E635F86009A6055 /* RegistrationViewController.swift in Sources */,
 				DC9869581EE8D7BE007DDA39 /* AppDelegate.swift in Sources */,
 			);
