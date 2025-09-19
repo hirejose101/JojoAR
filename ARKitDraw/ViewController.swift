@@ -1669,10 +1669,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let strokeGeometry = createThickStrokeGeometry(from: startPoint, to: endPoint, width: strokeWidth)
         let strokeNode = SCNNode(geometry: strokeGeometry)
         
-        // Add billboard constraint to keep stroke facing camera
-        let billboardConstraint = SCNBillboardConstraint()
-        billboardConstraint.freeAxes = [.Y] // Only rotate around Y axis
-        strokeNode.constraints = [billboardConstraint]
+        // NO BILLBOARD CONSTRAINT - let's see what happens!
+        // let billboardConstraint = SCNBillboardConstraint()
+        // billboardConstraint.freeAxes = [.Y] // Only rotate around Y axis
+        // strokeNode.constraints = [billboardConstraint]
         
         return strokeNode
     }
