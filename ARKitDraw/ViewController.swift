@@ -360,12 +360,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     // MARK: - Drawing Functionality
     private var drawButton: UIButton!
+    private var resetButton: UIButton!
     private var isDrawingMode = false
     private var currentDrawingNode: SCNNode?
     private var drawingPoints: [SCNVector3] = []
     private var isCurrentlyDrawing = false
     private var lastCameraPosition: SCNVector3?
     private var drawingStartTime: Date?
+    private var completedDrawingStrokes: [SCNNode] = [] // Track completed strokes for reset functionality
     
     // MARK: - Like and Comment Functionality
     private var tweetInteractionViews: [String: TweetInteractionView] = [:]
@@ -604,6 +606,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup Draw button
         setupDrawButton()
         
+        // Setup Reset button
+        setupResetButton()
+        
         // Setup authentication UI after all UI elements are created
         setupAuthenticationUI()
         
@@ -746,6 +751,32 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
     }
     
+    func setupResetButton() {
+        // Create Reset button
+        resetButton = UIButton(type: .system)
+        resetButton.setTitle("↺", for: .normal)
+        resetButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
+        resetButton.setTitleColor(.white, for: .normal)
+        resetButton.titleLabel?.font = UIFont.systemFont(ofSize: 20, weight: .bold)
+        resetButton.layer.cornerRadius = 12
+        resetButton.layer.shadowColor = UIColor.systemOrange.cgColor
+        resetButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        resetButton.layer.shadowOpacity = 0.6
+        resetButton.layer.shadowRadius = 8
+        resetButton.addTarget(self, action: #selector(resetButtonTapped), for: .touchUpInside)
+        resetButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(resetButton)
+        
+        // Position above the Draw button
+        NSLayoutConstraint.activate([
+            resetButton.centerXAnchor.constraint(equalTo: drawButton.centerXAnchor),
+            resetButton.bottomAnchor.constraint(equalTo: drawButton.topAnchor, constant: -10),
+            resetButton.widthAnchor.constraint(equalToConstant: 50),
+            resetButton.heightAnchor.constraint(equalToConstant: 40)
+        ])
+    }
+    
     func showTweetsDiscoveredNotification(count: Int) {
         let message = count == 1 ? "New tweet detected, Click 'See Tweets' button to view it" : "New tweets detected, Click 'See Tweets' button to view them"
         guidanceLabel.text = message
@@ -802,6 +833,35 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Finish current drawing if any
         finishCurrentDrawing()
         stopCameraDrawing()
+    }
+    
+    @objc func resetButtonTapped() {
+        // Remove the most recent completed drawing stroke
+        if !completedDrawingStrokes.isEmpty {
+            let lastStroke = completedDrawingStrokes.removeLast()
+            lastStroke.removeFromParentNode()
+            print("🎨 Removed last stroke. Remaining strokes: \(completedDrawingStrokes.count)")
+            
+            // Show feedback to user
+            guidanceLabel.text = "Removed last stroke"
+            guidanceLabel.textColor = .white
+            guidanceLabel.isHidden = false
+            
+            // Hide after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.guidanceLabel.isHidden = true
+            }
+        } else {
+            // No strokes to remove
+            guidanceLabel.text = "No strokes to remove"
+            guidanceLabel.textColor = .systemRed
+            guidanceLabel.isHidden = false
+            
+            // Hide after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.guidanceLabel.isHidden = true
+            }
+        }
     }
     
     @objc func seeTweetsButtonTapped() {
@@ -1655,6 +1715,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func finishCurrentDrawing() {
         if isCurrentlyDrawing {
+            // Store the completed drawing stroke before clearing it
+            if let completedStroke = currentDrawingNode {
+                completedDrawingStrokes.append(completedStroke)
+                print("🎨 Stored completed stroke. Total strokes: \(completedDrawingStrokes.count)")
+            }
+            
             isCurrentlyDrawing = false
             currentDrawingNode = nil
             drawingPoints.removeAll()
