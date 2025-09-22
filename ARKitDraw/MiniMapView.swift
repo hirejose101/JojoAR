@@ -305,7 +305,7 @@ extension MiniMapView: MKMapViewDelegate {
         searchButton = UIButton(type: .system)
         searchButton?.setTitle("🔍 Search for posts in this area", for: .normal)
         searchButton?.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        searchButton?.setTitleColor(UIColor.black, for: .normal)
+        searchButton?.setTitleColor(UIColor.white, for: .normal)
         searchButton?.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
         searchButton?.layer.cornerRadius = 20
         searchButton?.frame = CGRect(x: 20, y: 80, width: 250, height: 40) // Moved up and made wider

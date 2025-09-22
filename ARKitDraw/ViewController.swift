@@ -504,7 +504,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Configure button
         button.setTitle("Enter", for: .normal)
-        button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
         button.setTitleColor(UIColor.white, for: .normal)
         button.layer.cornerRadius = 12
         button.layer.shadowColor = UIColor.systemGreen.cgColor
@@ -701,7 +701,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create See Tweets button
         seeTweetsButton = UIButton(type: .system)
         seeTweetsButton.setTitle("See Tweets", for: .normal)
-        seeTweetsButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        seeTweetsButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
         seeTweetsButton.setTitleColor(.white, for: .normal)
         seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         seeTweetsButton.layer.cornerRadius = 12
@@ -728,11 +728,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create Draw button
         drawButton = UIButton(type: .system)
         drawButton.setTitle("Draw", for: .normal)
-        drawButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        drawButton.backgroundColor = UIColor.black.withAlphaComponent(0.4)
         drawButton.setTitleColor(.white, for: .normal)
         drawButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         drawButton.layer.cornerRadius = 12
-        drawButton.layer.shadowColor = UIColor.systemBlue.cgColor
+        drawButton.layer.shadowColor = UIColor.black.cgColor
         drawButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         drawButton.layer.shadowOpacity = 0.6
         drawButton.layer.shadowRadius = 8
@@ -742,10 +742,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         view.addSubview(drawButton)
         
-        // Position to the left of See Tweets button
+        // Position below the Enter button on the right side
         NSLayoutConstraint.activate([
-            drawButton.trailingAnchor.constraint(equalTo: seeTweetsButton.leadingAnchor, constant: -20),
-            drawButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            drawButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            drawButton.topAnchor.constraint(equalTo: button.bottomAnchor, constant: 20),
             drawButton.widthAnchor.constraint(equalToConstant: 100),
             drawButton.heightAnchor.constraint(equalToConstant: 50)
         ])
@@ -755,11 +755,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create Reset button
         resetButton = UIButton(type: .system)
         resetButton.setTitle("↺", for: .normal)
-        resetButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
+        resetButton.backgroundColor = UIColor.black.withAlphaComponent(0.4)
         resetButton.setTitleColor(.white, for: .normal)
         resetButton.titleLabel?.font = UIFont.systemFont(ofSize: 20, weight: .bold)
         resetButton.layer.cornerRadius = 12
-        resetButton.layer.shadowColor = UIColor.systemOrange.cgColor
+        resetButton.layer.shadowColor = UIColor.black.cgColor
         resetButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         resetButton.layer.shadowOpacity = 0.6
         resetButton.layer.shadowRadius = 8
@@ -768,10 +768,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         view.addSubview(resetButton)
         
-        // Position above the Draw button
+        // Position below the Draw button on the right side
         NSLayoutConstraint.activate([
-            resetButton.centerXAnchor.constraint(equalTo: drawButton.centerXAnchor),
-            resetButton.bottomAnchor.constraint(equalTo: drawButton.topAnchor, constant: -10),
+            resetButton.trailingAnchor.constraint(equalTo: drawButton.trailingAnchor),
+            resetButton.topAnchor.constraint(equalTo: drawButton.bottomAnchor, constant: 10),
             resetButton.widthAnchor.constraint(equalToConstant: 50),
             resetButton.heightAnchor.constraint(equalToConstant: 40)
         ])
@@ -806,7 +806,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         isDrawingMode = true
         drawButton.setTitle("Drawing...", for: .normal)
-        drawButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.9)
+        drawButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.4)
         
         // Show drawing guidance
         guidanceLabel.text = "Move phone around to draw, release to stop"
@@ -828,7 +828,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         isDrawingMode = false
         drawButton.setTitle("Draw", for: .normal)
-        drawButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        drawButton.backgroundColor = UIColor.black.withAlphaComponent(0.4)
         
         // Finish current drawing if any
         finishCurrentDrawing()
@@ -1812,7 +1812,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             // Reset button
             button.setTitle("Enter", for: .normal)
-            button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+            button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
             button.setTitleColor(UIColor.white, for: .normal)
             return
         }
