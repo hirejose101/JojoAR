@@ -152,6 +152,20 @@ class FirebaseService {
                     "username": comment.username,
                     "timestamp": Timestamp(date: comment.timestamp)
                 ]
+            },
+            "isDrawing": tweet.isDrawing,
+            "drawingStrokes": tweet.drawingStrokes.map { stroke in
+                return [
+                    "points": stroke.points.flatMap { [$0.x, $0.y, $0.z] }, // Flatten the nested arrays
+                    "color": [
+                        Float(stroke.color.redComponent),
+                        Float(stroke.color.greenComponent),
+                        Float(stroke.color.blueComponent),
+                        Float(stroke.color.alphaComponent)
+                    ],
+                    "width": stroke.width,
+                    "timestamp": Timestamp(date: stroke.timestamp)
+                ]
             }
         ]
         
@@ -364,6 +378,17 @@ class FirebaseService {
             }
         }
         
+        // Parse drawing fields
+        let isDrawing = data["isDrawing"] as? Bool ?? false
+        let drawingStrokesData = data["drawingStrokes"] as? [[String: Any]] ?? []
+        var drawingStrokes: [DrawingStroke] = []
+        
+        for strokeData in drawingStrokesData {
+            if let stroke = drawingStrokeFromData(strokeData) {
+                drawingStrokes.append(stroke)
+            }
+        }
+        
         return PersistentTweet(
             id: id,
             text: text,
@@ -377,11 +402,73 @@ class FirebaseService {
             likes: likes,
             comments: comments,
             screenPosition: screenPosition,
-            color: color
+            color: color,
+            isDrawing: isDrawing,
+            drawingStrokes: drawingStrokes
+        )
+    }
+    
+    private func drawingStrokeFromData(_ data: [String: Any]) -> DrawingStroke? {
+        guard let pointsData = data["points"] as? [Float],
+              let colorData = data["color"] as? [Float],
+              let width = data["width"] as? Float,
+              let timestamp = data["timestamp"] as? Timestamp else {
+            return nil
+        }
+        
+        // Convert flattened points data to SCNVector3 array
+        var points: [SCNVector3] = []
+        for i in stride(from: 0, to: pointsData.count, by: 3) {
+            guard i + 2 < pointsData.count else { break }
+            let point = SCNVector3(x: pointsData[i], y: pointsData[i + 1], z: pointsData[i + 2])
+            points.append(point)
+        }
+        
+        // Convert color data to UIColor
+        guard colorData.count >= 4 else { return nil }
+        let color = UIColor(
+            red: CGFloat(colorData[0]),
+            green: CGFloat(colorData[1]),
+            blue: CGFloat(colorData[2]),
+            alpha: CGFloat(colorData[3])
+        )
+        
+        return DrawingStroke(
+            points: points,
+            color: color,
+            width: width,
+            timestamp: timestamp.dateValue()
         )
     }
     
     private func calculateDistance(from: CLLocation, to: CLLocation) -> Double {
         return from.distance(from: to)
+    }
+}
+
+// MARK: - UIColor Extension
+extension UIColor {
+    var redComponent: CGFloat {
+        var red: CGFloat = 0
+        getRed(&red, green: nil, blue: nil, alpha: nil)
+        return red
+    }
+    
+    var greenComponent: CGFloat {
+        var green: CGFloat = 0
+        getRed(nil, green: &green, blue: nil, alpha: nil)
+        return green
+    }
+    
+    var blueComponent: CGFloat {
+        var blue: CGFloat = 0
+        getRed(nil, green: nil, blue: &blue, alpha: nil)
+        return blue
+    }
+    
+    var alphaComponent: CGFloat {
+        var alpha: CGFloat = 0
+        getRed(nil, green: nil, blue: nil, alpha: &alpha)
+        return alpha
     }
 } 

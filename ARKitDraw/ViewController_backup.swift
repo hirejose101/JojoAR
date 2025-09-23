@@ -619,10 +619,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup Save Drawing button
         setupSaveDrawingButton()
         
-        // Hide draw and reset buttons
-        drawButton.isHidden = true
-        resetButton.isHidden = true
-        
         // Setup authentication UI after all UI elements are created
         setupAuthenticationUI()
         
@@ -1111,11 +1107,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let drawingContainer = SCNNode()
         drawingContainer.name = "nearby_drawing_\(tweet.id)"
         
-        // Position drawing at its original AR world coordinates
-        drawingContainer.position = tweet.worldPosition
+        // For drawings, use the original 3D world coordinates (no screen positioning)
+        // The stroke points already contain the correct 3D world positions
+        drawingContainer.position = SCNVector3(0, 0, 0) // Origin - stroke points are relative to this
         
-        print("🎨 Drawing positioned at original AR world coordinates: \(tweet.worldPosition)")
-        
+        print("🎨 Drawing container positioned at origin for 3D world coordinates")
         
         // Recreate each stroke from the stored data
         for (strokeIndex, stroke) in tweet.drawingStrokes.enumerated() {
@@ -1649,13 +1645,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
         
         let cameraTransform = frame.camera.transform
-        let currentCameraPosition = SCNVector3(
+        let cameraPosition = SCNVector3(
             cameraTransform.columns.3.x,
             cameraTransform.columns.3.y - 0.4,  // Lower camera position by 0.4m (15 inches)
             cameraTransform.columns.3.z
         )
         
-        print("🔍 Camera position: \(currentCameraPosition)")
+        print("🔍 Camera position: \(cameraPosition)")
         print("🔍 Input screen coordinates: (\(screenX), \(screenY))")
         
         // Get camera forward direction
@@ -1690,9 +1686,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Calculate final position
         let finalPosition = SCNVector3(
-            currentCameraPosition.x + right.x * offsetX + up.x * offsetY + forward.x * offsetZ,
-            currentCameraPosition.y + right.y * offsetX + up.y * offsetY + forward.y * offsetZ,
-            currentCameraPosition.z + right.z * offsetX + up.z * offsetY + forward.z * offsetZ
+            cameraPosition.x + right.x * offsetX + up.x * offsetY + forward.x * offsetZ,
+            cameraPosition.y + right.y * offsetX + up.y * offsetY + forward.y * offsetZ,
+            cameraPosition.z + right.z * offsetX + up.z * offsetY + forward.z * offsetZ
         )
         
         print("🔍 Calculated offsets: (\(offsetX), \(offsetY), \(offsetZ))")
@@ -1886,22 +1882,36 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         isCurrentlyDrawing = true
         drawingStartTime = Date()
         
-        // Get current camera position
-        let cameraPosition = SCNVector3(
-            pointOfView.position.x,
-            pointOfView.position.y,
-            pointOfView.position.z
+        // Get current camera position and transform
+        let cameraPosition = pointOfView.position
+        let cameraTransform = pointOfView.transform
+        
+        // Calculate a fixed drawing distance in front of the camera (1 meter)
+        let drawingDistance: Float = 1.0
+        
+        // Get the camera's forward direction (negative Z in camera space)
+        let forwardDirection = SCNVector3(
+            -cameraTransform.m31,
+            -cameraTransform.m32,
+            -cameraTransform.m33
         )
         
-        drawingPoints = [cameraPosition]
-        lastCameraPosition = cameraPosition
+        // Calculate the drawing position in world space
+        let drawingPosition = SCNVector3(
+            cameraPosition.x + forwardDirection.x * drawingDistance,
+            cameraPosition.y + forwardDirection.y * drawingDistance,
+            cameraPosition.z + forwardDirection.z * drawingDistance
+        )
+        
+        drawingPoints = [drawingPosition]
+        lastCameraPosition = drawingPosition
         
         // Create a new drawing node
         currentDrawingNode = SCNNode()
         currentDrawingNode?.name = "drawing_\\(UUID().uuidString)"
         sceneView.scene.rootNode.addChildNode(currentDrawingNode!)
         
-        print("🎨 Started new camera drawing at: \(cameraPosition)")
+        print("🎨 Started new camera drawing at: \(drawingPosition)")
     }
     
     func updateCameraDrawing() {
@@ -1909,22 +1919,36 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
               let drawingNode = currentDrawingNode,
               let pointOfView = sceneView.pointOfView else { return }
         
-        // Get current camera position
-        let currentCameraPosition = SCNVector3(
-            pointOfView.position.x,
-            pointOfView.position.y,
-            pointOfView.position.z
+        // Get current camera position and transform
+        let cameraPosition = pointOfView.position
+        let cameraTransform = pointOfView.transform
+        
+        // Calculate a fixed drawing distance in front of the camera (1 meter)
+        let drawingDistance: Float = 1.0
+        
+        // Get the camera's forward direction (negative Z in camera space)
+        let forwardDirection = SCNVector3(
+            -cameraTransform.m31,
+            -cameraTransform.m32,
+            -cameraTransform.m33
+        )
+        
+        // Calculate the current drawing position in world space
+        let currentDrawingPosition = SCNVector3(
+            cameraPosition.x + forwardDirection.x * drawingDistance,
+            cameraPosition.y + forwardDirection.y * drawingDistance,
+            cameraPosition.z + forwardDirection.z * drawingDistance
         )
         
         // Only add point if camera moved significantly (larger threshold for smoother paint-like strokes)
         if let lastPos = lastCameraPosition {
-            let distance = currentCameraPosition.distance(vector: lastPos)
+            let distance = currentDrawingPosition.distance(vector: lastPos)
             if distance > 0.05 { // 5cm threshold for smoother paint-like strokes
-                addCameraPointToDrawing(currentCameraPosition)
-                lastCameraPosition = currentCameraPosition
+                addCameraPointToDrawing(currentDrawingPosition)
+                lastCameraPosition = currentDrawingPosition
             }
         } else {
-            lastCameraPosition = currentCameraPosition
+            lastCameraPosition = currentDrawingPosition
         }
     }
     
@@ -2472,15 +2496,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let dir = SCNVector3(-1 * mat.m31, -1 * mat.m32, -1 * mat.m33)
         
         // Calculate position at screen center height (same Y as camera, but in front)
-        let currentCameraPosition = SCNVector3(
-            pointOfView.position.x,
-            pointOfView.position.y,
-            pointOfView.position.z
-        )
+        let cameraPosition = pointOfView.position
         let tweetPosition = SCNVector3(
-            currentCameraPosition.x + (dir.x * 0.5),
-            currentCameraPosition.y, // Same height as camera
-            currentCameraPosition.z + (dir.z * 0.5)
+            cameraPosition.x + (dir.x * 0.5),
+            cameraPosition.y, // Same height as camera
+            cameraPosition.z + (dir.z * 0.5)
         )
         
         // Create and save persistent tweet with color

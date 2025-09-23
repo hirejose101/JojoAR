@@ -22,8 +22,10 @@ struct PersistentTweet: Codable {
     let colorGreen: Float       // Green component of the color
     let colorBlue: Float        // Blue component of the color
     let colorAlpha: Float       // Alpha component of the color
+    let isDrawing: Bool         // True if this tweet contains a 3D drawing
+    let drawingStrokes: [DrawingStroke] // Array of drawing stroke data
     
-    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0), color: UIColor = UIColor.black) {
+    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0), color: UIColor = UIColor.black, isDrawing: Bool = false, drawingStrokes: [DrawingStroke] = []) {
         self.id = id
         self.text = text
         self.latitude = latitude
@@ -51,6 +53,8 @@ struct PersistentTweet: Codable {
         self.colorGreen = Float(green)
         self.colorBlue = Float(blue)
         self.colorAlpha = Float(alpha)
+        self.isDrawing = isDrawing
+        self.drawingStrokes = drawingStrokes
     }
     
     var worldPosition: SCNVector3 {
@@ -92,5 +96,67 @@ struct TweetComment: Codable, Identifiable {
         self.userId = userId
         self.username = username
         self.timestamp = timestamp
+    }
+}
+
+// MARK: - Drawing Stroke Model
+struct DrawingStroke: Codable {
+    let points: [SCNVector3]           // 3D points along the stroke path
+    let color: UIColor                  // Stroke color
+    let width: Float                    // Stroke width
+    let timestamp: Date                 // When stroke was created
+    
+    // Codable keys
+    private enum CodingKeys: String, CodingKey {
+        case points
+        case colorRed, colorGreen, colorBlue, colorAlpha
+        case width
+        case timestamp
+    }
+    
+    init(points: [SCNVector3], color: UIColor, width: Float, timestamp: Date) {
+        self.points = points
+        self.color = color
+        self.width = width
+        self.timestamp = timestamp
+    }
+    
+    // Custom encoding
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        // Encode points as arrays of x, y, z coordinates
+        let pointData = points.map { [$0.x, $0.y, $0.z] }
+        try container.encode(pointData, forKey: .points)
+        
+        // Encode color components
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        try container.encode(Float(red), forKey: .colorRed)
+        try container.encode(Float(green), forKey: .colorGreen)
+        try container.encode(Float(blue), forKey: .colorBlue)
+        try container.encode(Float(alpha), forKey: .colorAlpha)
+        
+        try container.encode(width, forKey: .width)
+        try container.encode(timestamp, forKey: .timestamp)
+    }
+    
+    // Custom decoding
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Decode points
+        let pointData = try container.decode([[Float]].self, forKey: .points)
+        points = pointData.map { SCNVector3($0[0], $0[1], $0[2]) }
+        
+        // Decode color
+        let red = try container.decode(Float.self, forKey: .colorRed)
+        let green = try container.decode(Float.self, forKey: .colorGreen)
+        let blue = try container.decode(Float.self, forKey: .colorBlue)
+        let alpha = try container.decode(Float.self, forKey: .colorAlpha)
+        color = UIColor(red: CGFloat(red), green: CGFloat(green), blue: CGFloat(blue), alpha: CGFloat(alpha))
+        
+        width = try container.decode(Float.self, forKey: .width)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
     }
 } 
