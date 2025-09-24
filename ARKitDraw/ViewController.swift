@@ -12,7 +12,7 @@ import ARKit
 import CoreLocation
 import MapKit
 import FirebaseAuth
-
+import AVFoundation
 // MARK: - Street Sign Style Text System
 /// Creates street sign-style AR text nodes with proper centering and no drift
 func makeStreetSignNode(
@@ -362,6 +362,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var drawButton: UIButton!
     private var resetButton: UIButton!
     private var saveDrawingButton: UIButton!
+    private var cameraButton: UIButton!
+    
     private var isDrawingMode = false
     private var currentDrawingNode: SCNNode?
     private var drawingPoints: [SCNVector3] = []
@@ -619,6 +621,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup Save Drawing button
         setupSaveDrawingButton()
         
+        // Setup Camera button
+        setupCameraButton()
+        
         // Hide draw and reset buttons
         drawButton.isHidden = true
         resetButton.isHidden = true
@@ -715,11 +720,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create See Tweets button
         seeTweetsButton = UIButton(type: .system)
         seeTweetsButton.setTitle("See Tweets", for: .normal)
-        seeTweetsButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
+        seeTweetsButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
         seeTweetsButton.setTitleColor(.white, for: .normal)
         seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         seeTweetsButton.layer.cornerRadius = 12
-        seeTweetsButton.layer.shadowColor = UIColor.systemGreen.cgColor
+        seeTweetsButton.layer.shadowColor = UIColor.black.cgColor
         seeTweetsButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         seeTweetsButton.layer.shadowOpacity = 0.6
         seeTweetsButton.layer.shadowRadius = 8
@@ -822,6 +827,34 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Initially hidden
         saveDrawingButton.isHidden = true
     }
+    
+    func setupCameraButton() {
+        // Create Camera button
+        cameraButton = UIButton(type: .system)
+        cameraButton.setTitle("📷", for: .normal)
+        cameraButton.backgroundColor = UIColor.systemGreen // Green circular background
+        cameraButton.setTitleColor(.white, for: .normal)
+        cameraButton.titleLabel?.font = UIFont.systemFont(ofSize: 30, weight: .medium) // Larger icon size
+        cameraButton.layer.cornerRadius = 25 // Circular background (half of width/height)
+        cameraButton.contentVerticalAlignment = .center // Center vertically
+        cameraButton.contentHorizontalAlignment = .center // Center horizontally
+        cameraButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add to view
+        view.addSubview(cameraButton)
+        
+        // Position above the See Tweets button
+        NSLayoutConstraint.activate([
+            cameraButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            cameraButton.bottomAnchor.constraint(equalTo: seeTweetsButton.topAnchor, constant: -20),
+            cameraButton.widthAnchor.constraint(equalToConstant: 50), // Larger width for bigger icon
+            cameraButton.heightAnchor.constraint(equalToConstant: 50) // Larger height for bigger icon
+        ])
+        
+        // Add action
+        cameraButton.addTarget(self, action: #selector(cameraButtonTapped), for: .touchUpInside)
+    }
+    
     
     @objc func saveDrawingButtonTapped() {
         print("🎨 Save drawing button tapped")
@@ -933,6 +966,47 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             }
         }
     }
+    
+    @objc func cameraButtonTapped() {
+        print("📷 Camera button tapped - capturing AR scene")
+
+        // Capture the current AR scene view
+        let screenshot = sceneView.snapshot()
+
+        // Save to photo library
+        UIImageWriteToSavedPhotosAlbum(screenshot, self, #selector(image(_:didFinishSavingWithError:contextInfo:)), nil)
+
+        // Show feedback
+        guidanceLabel.text = "📷 Photo saved to camera roll!"
+        guidanceLabel.textColor = .systemGreen
+        guidanceLabel.isHidden = false
+
+        // Hide after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.guidanceLabel.isHidden = true
+        }
+    }
+    
+    
+    @objc func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+        if let error = error {
+            print("📷 Error saving image: \(error.localizedDescription)")
+            guidanceLabel.text = "Failed to save photo"
+            guidanceLabel.textColor = .systemRed
+        } else {
+            print("📷 Photo saved successfully to camera roll")
+            guidanceLabel.text = "📷 Photo saved successfully!"
+            guidanceLabel.textColor = .systemGreen
+        }
+        
+        guidanceLabel.isHidden = false
+        
+        // Hide after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.guidanceLabel.isHidden = true
+        }
+    }
+    
     
     func showTweetsDiscoveredNotification(count: Int) {
         let message = count == 1 ? "New tweet detected, Click 'See Tweets' button to view it" : "New tweets detected, Click 'See Tweets' button to view them"
@@ -2865,4 +2939,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
     }
 }
+
+
 
