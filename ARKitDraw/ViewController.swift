@@ -383,6 +383,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var tweetInteractionViews: [String: TweetInteractionView] = [:]
     private var commentInputView: CommentInputView?
     private var commentInputViewBottomConstraint: NSLayoutConstraint?
+    private var commentDisplayViewBottomConstraint: NSLayoutConstraint?
     private var commentDisplayView: CommentDisplayView?
     private var selectedTweetId: String?
     private var currentUserProfile: UserProfile?
@@ -698,10 +699,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         if let commentDisplayView = commentDisplayView {
             view.addSubview(commentDisplayView)
             
+            // Store the bottom constraint so we can modify it when keyboard appears
+            commentDisplayViewBottomConstraint = commentDisplayView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -100)
+            
             NSLayoutConstraint.activate([
                 commentDisplayView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
                 commentDisplayView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-                commentDisplayView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -100),
+                commentDisplayViewBottomConstraint!,
                 commentDisplayView.heightAnchor.constraint(equalToConstant: 300)
             ])
             
@@ -2184,6 +2188,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let material = SCNMaterial()
         material.diffuse.contents = image
         material.isDoubleSided = true
+        material.lightingModel = .constant // Use constant lighting to avoid black appearance
+        material.writesToDepthBuffer = false // Prevent depth issues
         plane.materials = [material]
         
         print("🖼️ Material diffuse contents set: \(material.diffuse.contents != nil)")
@@ -2736,11 +2742,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
         
         // Create a 3D plane to hold the interaction view (rectangle shape)
-        let interactionPlane = SCNPlane(width: 0.4, height: 0.15) // Wider rectangle (0.25 * 1.6 = 0.4, 0.24 * 0.625 = 0.15)
+        // Scale bar size based on tweet type for visual consistency
+        let (planeWidth, planeHeight, viewWidth, viewHeight): (Float, Float, CGFloat, CGFloat)
+        
+        if tweet.hasImage {
+            // For image tweets, scale up the bar to match text tweet visual size
+            planeWidth = 0.6
+            planeHeight = 0.225
+            viewWidth = 600
+            viewHeight = 225
+        } else {
+            // For text tweets, use original size
+            planeWidth = 0.4
+            planeHeight = 0.15
+            viewWidth = 400
+            viewHeight = 150
+        }
+        
+        let interactionPlane = SCNPlane(width: CGFloat(planeWidth), height: CGFloat(planeHeight))
         let interactionMaterial = SCNMaterial()
         
         // Convert UIView to UIImage for the material (rectangle shape)
-        interactionView.frame = CGRect(x: 0, y: 0, width: 400, height: 150) // Rectangle: 400x150 (matches 0.4x0.15 plane)
+        interactionView.frame = CGRect(x: 0, y: 0, width: viewWidth, height: viewHeight)
         interactionView.layoutIfNeeded()
         
         // Force the view to render properly
@@ -2764,14 +2787,28 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let interactionNode = SCNNode(geometry: interactionPlane)
         
         // Position it below the tweet node
-        // Use a fixed offset below the tweet instead of calculating height
-        let interactionOffset: Float = -0.08 // Much smaller gap for closer positioning
+        // Calculate offset based on tweet type (image vs text)
+        let interactionOffset: Float
+        
+        if tweet.hasImage {
+            // For image tweets, position at bottom of 1.0x1.0 image plane
+            interactionOffset = -0.5 - (planeHeight / 2) // Half image height (0.5) + half bar height + small gap
+        } else {
+            // For text tweets, use smaller offset
+            interactionOffset = -0.08 // Much smaller gap for closer positioning
+        }
         
         // Position relative to the tweet node (not absolute world position)
         interactionNode.position = SCNVector3(0, interactionOffset, 0)
         
-        // Make it face the camera (billboard)
-        interactionNode.constraints = [SCNBillboardConstraint()]
+        // Set constraints based on tweet type
+        if tweet.hasImage {
+            // For image tweets, don't use billboard - let it move with the image plane
+            interactionNode.constraints = []
+        } else {
+            // For text tweets, make it face the camera (billboard)
+            interactionNode.constraints = [SCNBillboardConstraint()]
+        }
         
         // Enable hit testing for this node
         interactionNode.isHidden = false
@@ -3364,6 +3401,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let keyboardHeight = keyboardFrame.height
         commentInputViewBottomConstraint?.constant = -keyboardHeight - 20
         
+        // Move comment display view above keyboard
+        commentDisplayViewBottomConstraint?.constant = -keyboardHeight - 100
+        
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
         }
@@ -3376,6 +3416,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Move comment input view back to original position
         commentInputViewBottomConstraint?.constant = -20
+        
+        // Move comment display view back to original position
+        commentDisplayViewBottomConstraint?.constant = -100
         
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
