@@ -26,6 +26,8 @@
 <string>This application needs microphone access to record videos with audio.</string>
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>This application needs location access to show nearby AR tweets.</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This application needs access to your photo library to select images for AR tweets.</string>
 <key>NSPhotoLibraryAddUsageDescription</key>
 <string>This application needs access to save AR photos and videos to your photo library.</string>
 <key>UILaunchStoryboardName</key>

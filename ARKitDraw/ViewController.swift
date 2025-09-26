@@ -13,6 +13,7 @@ import CoreLocation
 import MapKit
 import FirebaseAuth
 import AVFoundation
+import Photos
 // MARK: - Street Sign Style Text System
 /// Creates street sign-style AR text nodes with proper centering and no drift
 func makeStreetSignNode(
@@ -278,7 +279,7 @@ class GTAText {
     }
 }
 
-class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource, MiniMapSearchDelegate {
+class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource, MiniMapSearchDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
 
     @IBOutlet var sceneView: ARSCNView!
     @IBOutlet weak var button: UIButton!
@@ -385,6 +386,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var commentDisplayView: CommentDisplayView?
     private var selectedTweetId: String?
     private var currentUserProfile: UserProfile?
+    
+    // Image picker properties
+    private var selectedImage: UIImage?
+    private var isWaitingForImagePlacement = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -537,12 +542,26 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         colorPickerButton.layer.borderColor = UIColor.white.cgColor
         colorPickerButton.addTarget(self, action: #selector(colorPickerButtonTapped), for: .touchUpInside)
         
-        // Set color picker button as right view of text field with padding
-        let rightViewContainer = UIView(frame: CGRect(x: 0, y: 0, width: 50, height: 40))
+        // Create right view container with both image picker and color picker buttons
+        let rightViewContainer = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 40))
+        
+        // Add image picker button
+        let imagePickerButton = UIButton(type: .system)
+        imagePickerButton.setImage(UIImage(systemName: "plus"), for: .normal)
+        imagePickerButton.tintColor = UIColor.white
+        imagePickerButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
+        imagePickerButton.layer.cornerRadius = 15
+        imagePickerButton.layer.masksToBounds = true
+        imagePickerButton.layer.borderWidth = 1
+        imagePickerButton.layer.borderColor = UIColor.white.cgColor
+        imagePickerButton.addTarget(self, action: #selector(imagePickerButtonTapped), for: .touchUpInside)
+        
+        rightViewContainer.addSubview(imagePickerButton)
         rightViewContainer.addSubview(colorPickerButton)
         
-        // Position button with right padding (stays on right end)
-        colorPickerButton.frame = CGRect(x: 20, y: 5, width: 30, height: 30)
+        // Position buttons in right view container
+        imagePickerButton.frame = CGRect(x: 10, y: 5, width: 30, height: 30)
+        colorPickerButton.frame = CGRect(x: 50, y: 5, width: 30, height: 30)
         
         textField.rightView = rightViewContainer
         textField.rightViewMode = .always
@@ -918,8 +937,16 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 userId: firebaseService.getCurrentUserId() ?? "anonymous",
                 timestamp: Date(),
                 isPublic: true,
+                likes: [],
+                comments: [],
+                screenPosition: CGPoint(x: 0, y: 0),
+                color: UIColor.black,
                 isDrawing: true,
-                drawingStrokes: currentDrawingStrokes
+                drawingStrokes: currentDrawingStrokes,
+                hasImage: false,
+                imageURL: nil,
+                imageWidth: nil,
+                imageHeight: nil
             )
             
             print("🎨 Drawing tweet created successfully")
@@ -1155,6 +1182,23 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             if tweet.isDrawing && !tweet.drawingStrokes.isEmpty {
                 print("🎨 Rendering drawing tweet with \(tweet.drawingStrokes.count) strokes")
                 renderDrawingTweet(tweet, at: tweetLocation, distance: distance)
+            } else if tweet.hasImage, let imageURL = tweet.imageURL {
+                // Image tweet
+                print("🖼️ Rendering image tweet")
+                let screenRelativePosition = calculatePositionFromScreenCoordinates(
+                    screenX: tweet.screenPositionX,
+                    screenY: tweet.screenPositionY
+                )
+                
+                loadImageFromURL(imageURL) { [weak self] image in
+                    if let image = image {
+                        let imageNode = self?.createImageNode(image: image, at: screenRelativePosition)
+                        if let imageNode = imageNode {
+                            imageNode.name = "nearby_tweet_\(tweet.id)"
+                            self?.sceneView.scene.rootNode.addChildNode(imageNode)
+                        }
+                    }
+                }
             } else {
                 // Regular text tweet
                 // Use screen position for better discovery experience
@@ -1802,7 +1846,20 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     @objc func enterButtonTapped() {
+        print("🔘 Enter button tapped")
+        print("🔘 Selected image: \(selectedImage != nil ? "YES" : "NO")")
+        print("🔘 Waiting for image placement: \(isWaitingForImagePlacement)")
+        
+        // Check if we have an image to place
+        if let image = selectedImage, isWaitingForImagePlacement {
+            print("🔘 Placing image in AR")
+            placeImageInAR(image: image)
+            return
+        }
+        
+        // Original text tweet logic
         guard let tweetText = textField.text, !tweetText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("🔘 No text entered, showing empty tweet alert")
             // Show alert if text is empty
             let alert = UIAlertController(title: "Empty Tweet", message: "Please enter some text for your tweet.", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
@@ -1826,6 +1883,372 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let alert = UIAlertController(title: "Tap to Place", message: "Tap anywhere on the screen to place your tweet!", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
+    }
+    
+    // MARK: - Image Picker Methods
+    
+    @objc func imagePickerButtonTapped() {
+        print("➕ Image picker button tapped!")
+        
+        // Check if we have an image selected and are waiting for placement
+        if let image = selectedImage, isWaitingForImagePlacement {
+            print("➕ Image already selected, calling enterButtonTapped")
+            // User wants to place the selected image
+            enterButtonTapped()
+            return
+        }
+        
+        print("➕ Showing image picker options")
+        // Show image picker options
+        let alert = UIAlertController(title: "Add Image", message: "Choose how you'd like to add an image", preferredStyle: .actionSheet)
+        
+        // Camera option
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            alert.addAction(UIAlertAction(title: "Take Photo", style: .default) { _ in
+                print("📸 Camera option selected")
+                self.presentImagePicker(sourceType: .camera)
+            })
+        }
+        
+        // Photo library option
+        alert.addAction(UIAlertAction(title: "Choose from Library", style: .default) { _ in
+            print("📸 Photo library option selected")
+            print("📸 .photoLibrary raw value: \(UIImagePickerController.SourceType.photoLibrary.rawValue)")
+            self.presentImagePicker(sourceType: .photoLibrary)
+        })
+        
+        // Remove selected image option
+        if selectedImage != nil {
+            alert.addAction(UIAlertAction(title: "Remove Image", style: .destructive) { _ in
+                self.selectedImage = nil
+                self.isWaitingForImagePlacement = false
+                self.updateButtonState()
+            })
+        }
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        present(alert, animated: true)
+    }
+    
+    private func presentImagePicker(sourceType: UIImagePickerController.SourceType) {
+        print("📸 Presenting image picker with source type: \(sourceType.rawValue)")
+        print("📸 Source type enum: \(sourceType)")
+        
+        let imagePicker = UIImagePickerController()
+        imagePicker.delegate = self
+        imagePicker.sourceType = sourceType
+        imagePicker.allowsEditing = true
+        
+        print("📸 Image picker delegate set to: \(imagePicker.delegate)")
+        print("📸 Image picker source type: \(imagePicker.sourceType.rawValue)")
+        print("📸 Image picker allows editing: \(imagePicker.allowsEditing)")
+        print("📸 Self: \(self)")
+        print("📸 Delegate type: \(type(of: imagePicker.delegate))")
+        
+        present(imagePicker, animated: true) {
+            print("📸 Image picker presentation completed")
+        }
+    }
+    
+    private func placeImageInAR(image: UIImage) {
+        // Update button to show we're waiting for tap
+        button.setTitle("Tap to Place", for: .normal)
+        button.backgroundColor = UIColor.systemOrange
+        
+        // Clear text field and hide keyboard
+        textField.text = ""
+        textField.resignFirstResponder()
+        
+        // Show instruction to user
+        let alert = UIAlertController(title: "Tap to Place", message: "Tap anywhere on the screen to place your image!", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    private func updateButtonState() {
+        if selectedImage != nil && isWaitingForImagePlacement {
+            button.setTitle("Place Image", for: .normal)
+            button.backgroundColor = UIColor.systemOrange
+        } else {
+            button.setTitle("Enter", for: .normal)
+            button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
+        }
+    }
+    
+    // MARK: - UIImagePickerControllerDelegate
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [String : Any]) {
+        print("🖼️ Image picker delegate method called!")
+        print("🖼️ Picker: \(picker)")
+        print("🖼️ Info: \(info)")
+        print("🖼️ Info keys: \(info.keys)")
+        picker.dismiss(animated: true)
+        
+        print("🖼️ Image picker finished, info keys: \(info.keys)")
+        
+        if let editedImage = info["UIImagePickerControllerEditedImage"] as? UIImage {
+            selectedImage = editedImage
+            print("🖼️ Selected edited image")
+        } else if let originalImage = info["UIImagePickerControllerOriginalImage"] as? UIImage {
+            selectedImage = originalImage
+            print("🖼️ Selected original image")
+        } else {
+            print("🖼️ No image found in info")
+        }
+        
+        if selectedImage != nil {
+            isWaitingForImagePlacement = true
+            updateButtonState()
+            print("🖼️ Image selected, waiting for placement: \(isWaitingForImagePlacement)")
+            
+            // Show instruction to user
+            let alert = UIAlertController(title: "Image Selected", message: "Tap 'Enter' to place your image in AR space!", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+        } else {
+            print("🖼️ No image selected")
+        }
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        print("🖼️ Image picker cancelled")
+        picker.dismiss(animated: true) {
+            print("🖼️ Image picker dismiss completed")
+        }
+    }
+    
+    // MARK: - AR Image Placement
+    
+    private func placeImageAtLocation(location: CGPoint, image: UIImage) {
+        // Convert screen coordinates to world coordinates
+        let hitTestResults = sceneView.hitTest(location, types: .existingPlaneUsingExtent)
+        
+        if let hitResult = hitTestResults.first {
+            let worldPosition = SCNVector3(
+                hitResult.worldTransform.columns.3.x,
+                hitResult.worldTransform.columns.3.y,
+                hitResult.worldTransform.columns.3.z
+            )
+            
+            // Create image node
+            let imageNode = createImageNode(image: image, at: worldPosition)
+            sceneView.scene.rootNode.addChildNode(imageNode)
+            tweetNodes.append(imageNode)
+            
+            // Get current location
+            guard let currentLocation = locationManager.currentLocation else {
+                print("No location available")
+                return
+            }
+            
+            // Upload image to Firebase Storage first
+            firebaseService.uploadImage(image) { [weak self] imageURL, error in
+                if let error = error {
+                    print("Error uploading image: \(error)")
+                    return
+                }
+                
+                guard let imageURL = imageURL,
+                      let userId = self?.firebaseService.getCurrentUserId() else {
+                    print("Failed to get image URL or user ID")
+                    return
+                }
+                
+                // Create tweet with image
+                let tweet = PersistentTweet(
+                    id: UUID().uuidString,
+                    text: "", // Empty text for image-only tweets
+                    latitude: currentLocation.coordinate.latitude,
+                    longitude: currentLocation.coordinate.longitude,
+                    altitude: currentLocation.altitude,
+                    worldPosition: worldPosition,
+                    userId: userId,
+                    timestamp: Date(),
+                    isPublic: true,
+                    likes: [],
+                    comments: [],
+                    screenPosition: CGPoint(x: 0, y: 0),
+                    color: UIColor.black,
+                    isDrawing: false,
+                    drawingStrokes: [],
+                    hasImage: true,
+                    imageURL: imageURL,
+                    imageWidth: Float(image.size.width),
+                    imageHeight: Float(image.size.height)
+                )
+                
+                // Save to Firebase
+                self?.firebaseService.saveTweet(tweet) { error in
+                    if let error = error {
+                        print("Error saving image tweet: \(error)")
+                    } else {
+                        print("Image tweet saved successfully")
+                        self?.userTweets.append(tweet)
+                    }
+                }
+            }
+            
+            // Reset state
+            selectedImage = nil
+            isWaitingForImagePlacement = false
+            updateButtonState()
+        } else {
+            // If no plane detected, place at a default distance in front of camera
+            guard let pointOfView = sceneView.pointOfView else { return }
+            
+            // Get camera position and direction
+            let mat = pointOfView.transform
+            let dir = SCNVector3(-1 * mat.m31, -1 * mat.m32, -1 * mat.m33)
+            
+            // Calculate position in front of camera
+            let distance: Float = 1.0
+            let worldPosition = SCNVector3(
+                pointOfView.position.x + dir.x * distance,
+                pointOfView.position.y + dir.y * distance,
+                pointOfView.position.z + dir.z * distance
+            )
+            
+            // Create image node
+            let imageNode = createImageNode(image: image, at: worldPosition)
+            sceneView.scene.rootNode.addChildNode(imageNode)
+            tweetNodes.append(imageNode)
+            
+            // Get current location
+            guard let currentLocation = locationManager.currentLocation else {
+                print("No location available")
+                return
+            }
+            
+            // Upload image to Firebase Storage first
+            firebaseService.uploadImage(image) { [weak self] imageURL, error in
+                if let error = error {
+                    print("Error uploading image: \(error)")
+                    return
+                }
+                
+                guard let imageURL = imageURL,
+                      let userId = self?.firebaseService.getCurrentUserId() else {
+                    print("Failed to get image URL or user ID")
+                    return
+                }
+                
+                // Create tweet with image
+                let tweet = PersistentTweet(
+                    id: UUID().uuidString,
+                    text: "", // Empty text for image-only tweets
+                    latitude: currentLocation.coordinate.latitude,
+                    longitude: currentLocation.coordinate.longitude,
+                    altitude: currentLocation.altitude,
+                    worldPosition: worldPosition,
+                    userId: userId,
+                    timestamp: Date(),
+                    isPublic: true,
+                    likes: [],
+                    comments: [],
+                    screenPosition: CGPoint(x: 0, y: 0),
+                    color: UIColor.black,
+                    isDrawing: false,
+                    drawingStrokes: [],
+                    hasImage: true,
+                    imageURL: imageURL,
+                    imageWidth: Float(image.size.width),
+                    imageHeight: Float(image.size.height)
+                )
+                
+                // Save to Firebase
+                self?.firebaseService.saveTweet(tweet) { error in
+                    if let error = error {
+                        print("Error saving image tweet: \(error)")
+                    } else {
+                        print("Image tweet saved successfully")
+                        self?.userTweets.append(tweet)
+                    }
+                }
+            }
+            
+            // Reset state
+            selectedImage = nil
+            isWaitingForImagePlacement = false
+            updateButtonState()
+        }
+    }
+    
+    private func createImageNode(image: UIImage, at position: SCNVector3) -> SCNNode {
+        print("🖼️ Creating image node with image size: \(image.size)")
+        
+        // Create a plane geometry for the image
+        let plane = SCNPlane(width: 1.0, height: 1.0)
+        
+        // Set the image as the material
+        let material = SCNMaterial()
+        material.diffuse.contents = image
+        material.isDoubleSided = true
+        plane.materials = [material]
+        
+        print("🖼️ Material diffuse contents set: \(material.diffuse.contents != nil)")
+        
+        // Create the node
+        let imageNode = SCNNode(geometry: plane)
+        imageNode.position = position
+        
+        // Make it face the camera using billboard constraint (same as text tweets)
+        let billboardConstraint = SCNBillboardConstraint()
+        billboardConstraint.freeAxes = [.Y] // Only rotate around Y axis (keep upright)
+        imageNode.constraints = [billboardConstraint]
+        
+        print("🖼️ Image node created at position: \(position)")
+        
+        return imageNode
+    }
+    
+    private func displayTweetsInAR(tweets: [PersistentTweet]) {
+        print("🔄 Displaying \(tweets.count) tweets in AR space")
+        
+        for tweet in tweets {
+            if tweet.hasImage, let imageURL = tweet.imageURL {
+                // Load image from URL and create node
+                loadImageFromURL(imageURL) { [weak self] image in
+                    if let image = image {
+                        let imageNode = self?.createImageNode(image: image, at: tweet.worldPosition)
+                        if let imageNode = imageNode {
+                            self?.sceneView.scene.rootNode.addChildNode(imageNode)
+                            self?.tweetNodes.append(imageNode)
+                        }
+                    }
+                }
+            } else if !tweet.text.isEmpty {
+                // Create text node for text tweets
+                let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.5, color: tweet.color)
+                sceneView.scene.rootNode.addChildNode(textNode)
+                tweetNodes.append(textNode)
+            }
+        }
+    }
+    
+    private func loadImageFromURL(_ urlString: String, completion: @escaping (UIImage?) -> Void) {
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("Error loading image: \(error)")
+                completion(nil)
+                return
+            }
+            
+            guard let data = data, let image = UIImage(data: data) else {
+                print("Failed to create image from data")
+                completion(nil)
+                return
+            }
+            
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }.resume()
     }
     
     func showAuthenticationOptions() {
@@ -2126,6 +2549,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let location = gesture.location(in: sceneView)
         
         
+        // Check if we're waiting to place an image
+        if let image = selectedImage, isWaitingForImagePlacement {
+            placeImageAtLocation(location: location, image: image)
+            return
+        }
+        
         // Check if we're waiting to place a new tweet
         if isWaitingForTap, let tweetText = pendingTweetText {
             createTweetAtLocation(text: tweetText, location: location)
@@ -2270,7 +2699,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                     timestamp: Date(),
                     isPublic: true,
                     likes: [],
-                    comments: []
+                    comments: [],
+                    screenPosition: CGPoint(x: 0, y: 0),
+                    color: UIColor.black,
+                    isDrawing: false,
+                    drawingStrokes: [],
+                    hasImage: false,
+                    imageURL: nil,
+                    imageWidth: nil,
+                    imageHeight: nil
                 )
             }
         }
@@ -2594,7 +3031,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             likes: [],
             comments: [],
             screenPosition: screenPosition,
-            color: color
+            color: color,
+            isDrawing: false,
+            drawingStrokes: [],
+            hasImage: false,
+            imageURL: nil,
+            imageWidth: nil,
+            imageHeight: nil
         )
         
         firebaseService.saveTweet(tweet) { [weak self] error in

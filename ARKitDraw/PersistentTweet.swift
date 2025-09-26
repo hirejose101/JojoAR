@@ -24,8 +24,12 @@ struct PersistentTweet: Codable {
     let colorAlpha: Float       // Alpha component of the color
     let isDrawing: Bool         // True if this tweet contains a 3D drawing
     let drawingStrokes: [DrawingStroke] // Array of drawing stroke data
+    let hasImage: Bool          // True if this tweet contains an image
+    let imageURL: String?       // Firebase Storage URL for the image
+    let imageWidth: Float?      // Original image width
+    let imageHeight: Float?     // Original image height
     
-    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0), color: UIColor = UIColor.black, isDrawing: Bool = false, drawingStrokes: [DrawingStroke] = []) {
+    init(id: String, text: String, latitude: Double, longitude: Double, altitude: Double?, worldPosition: SCNVector3, userId: String, timestamp: Date, isPublic: Bool, likes: [String] = [], comments: [TweetComment] = [], screenPosition: CGPoint = CGPoint(x: 0, y: 0), color: UIColor = UIColor.black, isDrawing: Bool = false, drawingStrokes: [DrawingStroke] = [], hasImage: Bool = false, imageURL: String? = nil, imageWidth: Float? = nil, imageHeight: Float? = nil) {
         self.id = id
         self.text = text
         self.latitude = latitude
@@ -55,6 +59,10 @@ struct PersistentTweet: Codable {
         self.colorAlpha = Float(alpha)
         self.isDrawing = isDrawing
         self.drawingStrokes = drawingStrokes
+        self.hasImage = hasImage
+        self.imageURL = imageURL
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
     }
     
     var worldPosition: SCNVector3 {

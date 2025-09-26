@@ -2,16 +2,50 @@ import Foundation
 import Firebase
 import FirebaseFirestore
 import FirebaseAuth
+import FirebaseStorage
 import CoreLocation
 import SceneKit
 
 class FirebaseService {
     private let db = Firestore.firestore()
+    private let storage = Storage.storage()
     private let tweetsCollection = "tweets"
     private let usersCollection = "users"
     
     init() {
         // Firebase is configured in AppDelegate
+    }
+    
+    // MARK: - Image Upload
+    
+    func uploadImage(_ image: UIImage, completion: @escaping (String?, Error?) -> Void) {
+        guard let imageData = UIImageJPEGRepresentation(image, 0.8) else {
+            completion(nil, NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to data"]))
+            return
+        }
+        
+        let imageId = UUID().uuidString
+        let imageRef = storage.reference().child("tweet_images/\(imageId).jpg")
+        
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        
+        imageRef.putData(imageData, metadata: metadata) { metadata, error in
+            if let error = error {
+                completion(nil, error)
+                return
+            }
+            
+            imageRef.downloadURL { url, error in
+                if let error = error {
+                    completion(nil, error)
+                } else if let downloadURL = url {
+                    completion(downloadURL.absoluteString, nil)
+                } else {
+                    completion(nil, NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get download URL"]))
+                }
+            }
+        }
     }
     
     // MARK: - Authentication
@@ -166,7 +200,11 @@ class FirebaseService {
                     "width": stroke.width,
                     "timestamp": Timestamp(date: stroke.timestamp)
                 ]
-            }
+            },
+            "hasImage": tweet.hasImage,
+            "imageURL": tweet.imageURL ?? NSNull(),
+            "imageWidth": tweet.imageWidth ?? NSNull(),
+            "imageHeight": tweet.imageHeight ?? NSNull()
         ]
         
         db.collection(tweetsCollection).document(tweet.id).setData(tweetData) { error in
@@ -389,6 +427,12 @@ class FirebaseService {
             }
         }
         
+        // Parse image fields
+        let hasImage = data["hasImage"] as? Bool ?? false
+        let imageURL = data["imageURL"] as? String
+        let imageWidth = data["imageWidth"] as? Float
+        let imageHeight = data["imageHeight"] as? Float
+        
         return PersistentTweet(
             id: id,
             text: text,
@@ -404,7 +448,11 @@ class FirebaseService {
             screenPosition: screenPosition,
             color: color,
             isDrawing: isDrawing,
-            drawingStrokes: drawingStrokes
+            drawingStrokes: drawingStrokes,
+            hasImage: hasImage,
+            imageURL: imageURL,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight
         )
     }
     
