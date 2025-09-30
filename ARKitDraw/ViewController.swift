@@ -392,6 +392,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var selectedImage: UIImage?
     private var isWaitingForImagePlacement = false
     
+    // MARK: - Tweet Drag & Drop Properties
+    private var isDraggingTweet = false
+    private var draggedTweetId: String?
+    private var draggedTweetNode: SCNNode?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -419,6 +424,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Add tap gesture recognizer
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         sceneView.addGestureRecognizer(tapGesture)
+        
+        // Add pan gesture recognizer for drag & drop
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        sceneView.addGestureRecognizer(panGesture)
         
         // Add notification observer for authentication state changes
         NotificationCenter.default.addObserver(
@@ -2721,6 +2730,224 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         if let tweet = tweet {
             selectedTweetId = tweetId
             showTweetInteractionView(for: tweet, at: node)
+        }
+    }
+    
+    // MARK: - Pan Gesture Handler
+    
+    @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+        let location = gesture.location(in: sceneView)
+        
+        switch gesture.state {
+        case .began:
+            handlePanBegan(at: location)
+        case .changed:
+            handlePanChanged(at: location)
+        case .ended, .cancelled:
+            handlePanEnded()
+        default:
+            break
+        }
+    }
+    
+    private func handlePanBegan(at location: CGPoint) {
+        // Check if we're dragging an existing tweet
+        let hitTestResults = sceneView.hitTest(location, options: [:])
+        
+        for hitTestResult in hitTestResults {
+            let node = hitTestResult.node
+            
+            // Find the parent tweet node by traversing up the hierarchy
+            var currentNode = node
+            while currentNode.parent != nil {
+                if let nodeName = currentNode.name {
+                    // Check for tweet nodes (but not interaction nodes)
+                    if (nodeName.hasPrefix("nearby_tweet_") || nodeName.hasPrefix("my_tweet_") || 
+                        nodeName.hasPrefix("nearby_drawing_") || nodeName.hasPrefix("my_drawing_")) &&
+                       !nodeName.hasPrefix("interaction_") {
+                        
+                        // Extract tweet ID from node name
+                        let tweetId = nodeName.replacingOccurrences(of: "nearby_tweet_", with: "")
+                            .replacingOccurrences(of: "my_tweet_", with: "")
+                            .replacingOccurrences(of: "nearby_drawing_", with: "")
+                            .replacingOccurrences(of: "my_drawing_", with: "")
+                        
+                        if !tweetId.isEmpty {
+                            startDraggingTweet(tweetId: tweetId, node: currentNode)
+                            return
+                        }
+                    }
+                }
+                currentNode = currentNode.parent!
+            }
+        }
+    }
+    
+    private func startDraggingTweet(tweetId: String, node: SCNNode) {
+        print("🔄 Started dragging tweet: \(tweetId)")
+        print("🔄 Node current position: \(node.position)")
+        
+        isDraggingTweet = true
+        draggedTweetId = tweetId
+        draggedTweetNode = node
+        
+        // Add visual feedback - slightly scale up the tweet
+        let scaleAction = SCNAction.scale(to: 1.1, duration: 0.1)
+        node.runAction(scaleAction)
+        
+        // Add a subtle glow effect
+        addGlowEffect(to: node)
+    }
+    
+    private func handlePanChanged(at location: CGPoint) {
+        guard isDraggingTweet, let draggedNode = draggedTweetNode else { return }
+        
+        // Use a simpler approach - move relative to camera position
+        guard let pointOfView = sceneView.pointOfView else { return }
+        
+        let cameraPosition = pointOfView.position
+        
+        // Convert screen coordinates to normalized coordinates (-1 to 1)
+        let screenWidth = sceneView.bounds.width
+        let screenHeight = sceneView.bounds.height
+        
+        let normalizedX = (location.x / screenWidth) * 2.0 - 1.0
+        let normalizedY = 1.0 - (location.y / screenHeight) * 2.0
+        
+        // Simple 2D movement in front of camera
+        let offsetX = Float(normalizedX) * 1.0  // 1 meter left/right spread
+        let offsetY = Float(normalizedY) * 0.6  // 0.6 meter up/down spread
+        let distanceInFront: Float = 1.5        // 1.5 meters in front of camera
+        
+        // Calculate new position relative to camera
+        let newPosition = SCNVector3(
+            cameraPosition.x + offsetX,
+            cameraPosition.y + offsetY,
+            cameraPosition.z - distanceInFront  // In front of camera
+        )
+        
+        // Debug logging
+        print("🔄 Drag: \(location) -> Normalized: (\(normalizedX), \(normalizedY)) -> New pos: \(newPosition)")
+        
+        // Update the dragged node's position
+        draggedNode.position = newPosition
+        
+        // Also move any interaction view if it exists
+        if let tweetId = draggedTweetId {
+            moveInteractionViewForTweet(tweetId: tweetId, to: newPosition)
+        }
+    }
+    
+    private func handlePanEnded() {
+        guard isDraggingTweet, let draggedNode = draggedTweetNode, let tweetId = draggedTweetId else { return }
+        
+        print("🔄 Finished dragging tweet: \(tweetId)")
+        
+        // Remove visual feedback
+        let scaleAction = SCNAction.scale(to: 1.0, duration: 0.1)
+        draggedNode.runAction(scaleAction)
+        
+        removeGlowEffect(from: draggedNode)
+        
+        // Reset drag state
+        isDraggingTweet = false
+        draggedTweetId = nil
+        draggedTweetNode = nil
+    }
+    
+    // MARK: - Helper Methods for Drag & Drop
+    
+    private func screenToWorldPosition(_ screenPoint: CGPoint) -> SCNVector3 {
+        guard let frame = sceneView.session.currentFrame else {
+            return SCNVector3(0, 0, -2) // Fallback position
+        }
+        
+        let cameraTransform = frame.camera.transform
+        let currentCameraPosition = SCNVector3(
+            cameraTransform.columns.3.x,
+            cameraTransform.columns.3.y,
+            cameraTransform.columns.3.z
+        )
+        
+        // Get camera directions for 2D movement only
+        let right = SCNVector3(
+            cameraTransform.columns.0.x,
+            cameraTransform.columns.0.y,
+            cameraTransform.columns.0.z
+        )
+        
+        let up = SCNVector3(
+            cameraTransform.columns.1.x,
+            cameraTransform.columns.1.y,
+            cameraTransform.columns.1.z
+        )
+        
+        let forward = SCNVector3(
+            -cameraTransform.columns.2.x,
+            -cameraTransform.columns.2.y,
+            -cameraTransform.columns.2.z
+        )
+        
+        // Convert screen coordinates to 2D offset only
+        let screenWidth = sceneView.bounds.width
+        let screenHeight = sceneView.bounds.height
+        
+        // Normalize screen coordinates to -1 to 1 range
+        let normalizedX = (screenPoint.x / screenWidth) * 2.0 - 1.0
+        let normalizedY = 1.0 - (screenPoint.y / screenHeight) * 2.0 // Flip Y coordinate
+        
+        let horizontalSpread: Float = 1.0  // How far left/right tweets can be dragged
+        let verticalSpread: Float = 0.6    // How far up/down tweets can be dragged
+        let distanceInFront: Float = 1.5   // Fixed distance in front of camera
+        
+        let offsetX = Float(normalizedX) * horizontalSpread
+        let offsetY = Float(normalizedY) * verticalSpread
+        
+        // Calculate final position - 2D movement only (X and Y axes)
+        // Z-axis stays constant at the fixed distance in front of camera
+        let finalPosition = SCNVector3(
+            currentCameraPosition.x + right.x * offsetX + up.x * offsetY + forward.x * distanceInFront,
+            currentCameraPosition.y + right.y * offsetX + up.y * offsetY + forward.y * distanceInFront,
+            currentCameraPosition.z + right.z * offsetX + up.z * offsetY + forward.z * distanceInFront
+        )
+        
+        print("🔍 Camera pos: \(currentCameraPosition)")
+        print("🔍 Final pos: \(finalPosition)")
+        
+        return finalPosition
+    }
+    
+    private func moveInteractionViewForTweet(tweetId: String, to position: SCNVector3) {
+        // Find and move the interaction view if it exists
+        if let interactionNode = sceneView.scene.rootNode.childNode(withName: "interaction_\(tweetId)", recursively: true) {
+            // Position interaction view slightly below the tweet
+            interactionNode.position = SCNVector3(position.x, position.y - 0.15, position.z)
+        }
+    }
+    
+    private func addGlowEffect(to node: SCNNode) {
+        // Add a subtle emission material for glow effect
+        node.enumerateChildNodes { childNode, _ in
+            if let geometry = childNode.geometry {
+                for material in geometry.materials {
+                    if material.emission.contents == nil {
+                        material.emission.contents = UIColor.white
+                        material.emission.intensity = 0.3
+                    }
+                }
+            }
+        }
+    }
+    
+    private func removeGlowEffect(from node: SCNNode) {
+        // Remove the glow effect
+        node.enumerateChildNodes { childNode, _ in
+            if let geometry = childNode.geometry {
+                for material in geometry.materials {
+                    material.emission.contents = nil
+                    material.emission.intensity = 0.0
+                }
+            }
         }
     }
     
