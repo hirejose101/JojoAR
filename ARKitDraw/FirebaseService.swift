@@ -156,6 +156,44 @@ class FirebaseService {
         return nil
     }
     
+    // MARK: - Username Fetching
+    
+    func fetchUsername(userId: String, completion: @escaping (String?) -> Void) {
+        print("🌐 Fetching username from Firebase for userId: \(userId)")
+        let userDocRef = db.collection("users").document(userId)
+        
+        userDocRef.getDocument { document, error in
+            if let error = error {
+                print("❌ Error fetching username for userId \(userId): \(error)")
+                completion(nil)
+                return
+            }
+            
+            guard let document = document, document.exists else {
+                print("❌ User document does not exist for userId: \(userId)")
+                completion(nil)
+                return
+            }
+            
+            guard let data = document.data() else {
+                print("❌ User document has no data for userId: \(userId)")
+                completion(nil)
+                return
+            }
+            
+            print("📋 User document data for \(userId): \(data)")
+            
+            guard let username = data["username"] as? String else {
+                print("❌ Username field not found or not a string for userId: \(userId)")
+                completion(nil)
+                return
+            }
+            
+            print("✅ Got username from Firebase: \(username)")
+            completion(username)
+        }
+    }
+    
     // MARK: - Tweet Management
     
     func saveTweet(_ tweet: PersistentTweet, completion: @escaping (Error?) -> Void) {

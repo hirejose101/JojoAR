@@ -196,7 +196,7 @@ extension MiniMapView: MKMapViewDelegate {
             annotationView?.image = createPinImage(size: 20, color: UIColor.white)
         } else {
             // Tweet location - green pin
-            annotationView?.image = createPinImage(size: 20, color: UIColor.green)
+            annotationView?.image = createPinImage(size: 20, color: UIColor.neonGreen)
         }
         
         return annotationView
@@ -306,13 +306,13 @@ extension MiniMapView: MKMapViewDelegate {
         searchButton?.setTitle("🔍 Search for posts in this area", for: .normal)
         searchButton?.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
         searchButton?.setTitleColor(UIColor.white, for: .normal)
-        searchButton?.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        searchButton?.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.9)
         searchButton?.layer.cornerRadius = 20
         searchButton?.frame = CGRect(x: 20, y: 80, width: 250, height: 40) // Moved up and made wider
         searchButton?.addTarget(self, action: #selector(searchButtonTapped), for: .touchUpInside)
         searchButton?.isHidden = false // Initially visible for testing
         searchButton?.layer.zPosition = 1000 // Ensure it's above the map
-        searchButton?.layer.shadowColor = UIColor.systemGreen.cgColor
+        searchButton?.layer.shadowColor = UIColor.neonGreen.cgColor
         searchButton?.layer.shadowOffset = CGSize(width: 0, height: 4)
         searchButton?.layer.shadowRadius = 8
         searchButton?.layer.shadowOpacity = 0.6

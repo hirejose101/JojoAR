@@ -14,6 +14,12 @@ import MapKit
 import FirebaseAuth
 import AVFoundation
 import Photos
+
+// MARK: - Custom Colors
+extension UIColor {
+    static let neonGreen = UIColor(red: 0/255, green: 100/255, blue: 0/255, alpha: 1.0)
+}
+
 // MARK: - Street Sign Style Text System
 /// Creates street sign-style AR text nodes with proper centering and no drift
 func makeStreetSignNode(
@@ -26,7 +32,7 @@ func makeStreetSignNode(
     textColor: UIColor = .white,
     boardColor: UIColor = .black,
     cornerRadiusMeters: CGFloat = 0.01,       // rounded board corners
-    billboard: Bool = true                    // always face camera
+    billboard: Bool = true                   // always face camera
 ) -> SCNNode {
 
     // 1) Build the SCNText (no extrusion for a flat sign)
@@ -77,6 +83,8 @@ func makeStreetSignNode(
     let boardHeight = textHeightMeters + 2 * verticalPaddingMeters
 
     let boardPlane = SCNPlane(width: boardWidth, height: boardHeight)
+    
+    // Create board (username will be handled separately)
     let boardMat = SCNMaterial()
     boardMat.diffuse.contents = boardColor
     boardMat.lightingModel = .constant
@@ -102,6 +110,7 @@ func makeStreetSignNode(
 
     return signNode
 }
+
 
 // MARK: - GTA Style Text System
 /// Professional GTA-style 3D text with proper stroke and performance optimization
@@ -397,6 +406,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var draggedTweetId: String?
     private var draggedTweetNode: SCNNode?
     
+    // MARK: - Username Cache
+    private var usernameCache: [String: String] = [:]
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -528,10 +540,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Configure button
         button.setTitle("Enter", for: .normal)
-        button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
+        button.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.75)
         button.setTitleColor(UIColor.white, for: .normal)
         button.layer.cornerRadius = 12
-        button.layer.shadowColor = UIColor.systemGreen.cgColor
+        button.layer.shadowColor = UIColor.neonGreen.cgColor
         button.layer.shadowOffset = CGSize(width: 0, height: 4)
         button.layer.shadowRadius = 8
         button.layer.shadowOpacity = 0.6
@@ -580,12 +592,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyButton = UIButton(type: .system)
         historyButton.setImage(UIImage(systemName: "person.fill"), for: .normal)
         historyButton.tintColor = UIColor.white
-        historyButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.9)
+        historyButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.9)
         historyButton.layer.cornerRadius = 25
         historyButton.layer.masksToBounds = true
         historyButton.layer.borderWidth = 2
-        historyButton.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.8).cgColor
-        historyButton.layer.shadowColor = UIColor.systemGreen.cgColor
+        historyButton.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.8).cgColor
+        historyButton.layer.shadowColor = UIColor.neonGreen.cgColor
         historyButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         historyButton.layer.shadowRadius = 8
         historyButton.layer.shadowOpacity = 0.6
@@ -614,7 +626,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyTableView.layer.cornerRadius = 15
         historyTableView.layer.masksToBounds = true
         historyTableView.layer.borderWidth = 2
-        historyTableView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.6).cgColor
+        historyTableView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.6).cgColor
         historyTableView.separatorStyle = .none
         historyTableView.delegate = self
         historyTableView.dataSource = self
@@ -864,7 +876,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create Camera button
         cameraButton = UIButton(type: .system)
         cameraButton.setTitle("📷", for: .normal)
-        cameraButton.backgroundColor = UIColor.systemGreen // Green circular background
+        cameraButton.backgroundColor = UIColor.neonGreen // Green circular background
         cameraButton.setTitleColor(.white, for: .normal)
         cameraButton.titleLabel?.font = UIFont.systemFont(ofSize: 30, weight: .medium) // Larger icon size
         cameraButton.layer.cornerRadius = 25 // Circular background (half of width/height)
@@ -970,7 +982,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                     if error == nil {
                         print("🎨 Drawing saved successfully to Firebase")
                         self?.guidanceLabel.text = "Drawing saved successfully!"
-                        self?.guidanceLabel.textColor = .systemGreen
+                        self?.guidanceLabel.textColor = .neonGreen
                         self?.guidanceLabel.isHidden = false
                         
                         // Clear current drawing data
@@ -1018,7 +1030,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
 
         // Show feedback
         guidanceLabel.text = "📷 Photo saved to camera roll!"
-        guidanceLabel.textColor = .systemGreen
+        guidanceLabel.textColor = .neonGreen
         guidanceLabel.isHidden = false
 
         // Hide after 2 seconds
@@ -1036,7 +1048,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         } else {
             print("📷 Photo saved successfully to camera roll")
             guidanceLabel.text = "📷 Photo saved successfully!"
-            guidanceLabel.textColor = .systemGreen
+            guidanceLabel.textColor = .neonGreen
         }
         
         guidanceLabel.isHidden = false
@@ -1224,7 +1236,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 print("🔍 Tweet '\(tweet.text)' screen position: (\(tweet.screenPositionX), \(tweet.screenPositionY))")
                 print("🔍 Calculated 3D position: \(screenRelativePosition)")
                 
-                let textNode = createTextNode(text: tweet.text, position: screenRelativePosition, distance: distance, color: tweet.color)
+                let textNode = createTextNode(text: tweet.text, position: screenRelativePosition, distance: distance, color: tweet.color, userId: tweet.userId)
                 textNode.name = "nearby_tweet_\(tweet.id)"
                 
                 sceneView.scene.rootNode.addChildNode(textNode)
@@ -1636,12 +1648,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Define colors
         let colors: [UIColor] = [
-            .black, .white, .red, .orange, .yellow, .green, .blue, .purple,
+            .black, .white, .red, .orange, .yellow, .neonGreen, .blue, .purple,
             .systemPink, .systemTeal, .systemIndigo, .systemBrown
         ]
         
         let colorNames = [
-            "Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple",
+            "Black", "White", "Red", "Orange", "Yellow", "Neon Green", "Blue", "Purple",
             "Pink", "Teal", "Indigo", "Brown"
         ]
         
@@ -1709,7 +1721,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     @objc private func colorSelected(_ sender: UIButton) {
         let colors: [UIColor] = [
-            .black, .white, .red, .orange, .yellow, .green, .blue, .purple,
+            .black, .white, .red, .orange, .yellow, .neonGreen, .blue, .purple,
             .systemPink, .systemTeal, .systemIndigo, .systemBrown
         ]
         
@@ -1832,16 +1844,16 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         return finalPosition
     }
     
-    func createTextNode(text: String, position: SCNVector3, distance: Double, color: UIColor = UIColor.black) -> SCNNode {
-        // Create street sign-style AR tweet
+    func createTextNode(text: String, position: SCNVector3, distance: Double, color: UIColor = UIColor.black, userId: String? = nil) -> SCNNode {
+        // Create new style: colored text on white background
         let tweetSign = makeStreetSignNode(
             text: text,
             primaryFontName: "AvenirNext-Heavy",
             targetTextHeightMeters: 0.08,
             horizontalPaddingMeters: 0.04,
             verticalPaddingMeters: 0.024,
-            textColor: .white,
-            boardColor: color, // Use the specific color for this tweet
+            textColor: color, // Colored text instead of white
+            boardColor: .white, // White background instead of colored
             cornerRadiusMeters: 0.01,
             billboard: true
         )
@@ -1854,6 +1866,26 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let scaleAction = SCNAction.scale(to: 3.0, duration: 0.3)
         scaleAction.timingMode = .easeOut
         tweetSign.runAction(scaleAction)
+        
+        // Fetch and add username if userId is provided
+        if let userId = userId {
+            print("🔍 Fetching username for userId: \(userId)")
+            fetchUsername(userId: userId) { [weak self, weak tweetSign] username in
+                print("🔍 Received username: \(username ?? "nil") for userId: \(userId)")
+                guard let username = username, let tweetSign = tweetSign else { 
+                    print("❌ Failed to get username or tweetSign")
+                    return 
+                }
+                
+                // Update the board texture with username
+                DispatchQueue.main.async {
+                    print("✅ Updating tweet with username: \(username)")
+                    self?.updateTweetWithUsername(tweetSign: tweetSign, username: username, color: color)
+                }
+            }
+        } else {
+            print("❌ No userId provided for tweet")
+        }
         
         return tweetSign
     }
@@ -1985,7 +2017,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             button.backgroundColor = UIColor.systemOrange
         } else {
             button.setTitle("Enter", for: .normal)
-            button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
+            button.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.75)
         }
     }
     
@@ -2234,7 +2266,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 }
             } else if !tweet.text.isEmpty {
                 // Create text node for text tweets
-                let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.5, color: tweet.color)
+                let textNode = createTextNode(text: tweet.text, position: tweet.worldPosition, distance: 0.5, color: tweet.color, userId: tweet.userId)
                 sceneView.scene.rootNode.addChildNode(textNode)
                 tweetNodes.append(textNode)
             }
@@ -2580,7 +2612,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             // Reset button
             button.setTitle("Enter", for: .normal)
-            button.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
+            button.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.75)
             button.setTitleColor(UIColor.white, for: .normal)
             return
         }
@@ -2853,6 +2885,60 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         isDraggingTweet = false
         draggedTweetId = nil
         draggedTweetNode = nil
+    }
+    
+    // MARK: - Username Management
+    
+    private func fetchUsername(userId: String, completion: @escaping (String?) -> Void) {
+        // Check cache first
+        if let cachedUsername = usernameCache[userId] {
+            print("📦 Using cached username: \(cachedUsername) for userId: \(userId)")
+            completion(cachedUsername)
+            return
+        }
+        
+        print("🌐 Fetching username from Firebase for userId: \(userId)")
+        // Fetch from Firebase
+        firebaseService.fetchUsername(userId: userId) { [weak self] username in
+            if let username = username {
+                print("✅ Got username from Firebase: \(username)")
+                self?.usernameCache[userId] = username
+            } else {
+                print("❌ No username found in Firebase for userId: \(userId)")
+            }
+            completion(username)
+        }
+    }
+    
+    private func updateTweetWithUsername(tweetSign: SCNNode, username: String, color: UIColor) {
+        print("🎨 updateTweetWithUsername called with username: \(username)")
+        
+        // The board geometry is in the first child node
+        guard let boardNode = tweetSign.childNodes.first,
+              let boardPlane = boardNode.geometry as? SCNPlane else { 
+            print("❌ Failed to get boardPlane from tweetSign child node")
+            print("❌ TweetSign has \(tweetSign.childNodes.count) child nodes")
+            return 
+        }
+        
+        print("📏 Board size: \(boardPlane.width) x \(boardPlane.height)")
+        
+        let boardTexture = createBoardTextureWithUsername(
+            boardSize: CGSize(width: boardPlane.width, height: boardPlane.height),
+            backgroundColor: .white,
+            cornerRadius: 0.01,
+            username: username
+        )
+        
+        print("🖼️ Created board texture: \(boardTexture.size)")
+        
+        let boardMat = SCNMaterial()
+        boardMat.diffuse.contents = boardTexture
+        boardMat.lightingModel = .constant
+        boardMat.isDoubleSided = true
+        boardPlane.firstMaterial = boardMat
+        
+        print("✅ Updated board material with username texture")
     }
     
     // MARK: - Helper Methods for Drag & Drop
@@ -3228,8 +3314,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create and save persistent tweet with screen position and color
         savePersistentTweet(text: text, position: tweetPosition, screenPosition: screenPosition, color: pendingTweetColor)
         
-        // Create visual node with the selected color
-        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0, color: pendingTweetColor)
+        // Get userId for visual creation
+        let userId = firebaseService.getCurrentUserId() ?? currentUserId
+        
+        // Create visual node with the selected color and userId
+        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0, color: pendingTweetColor, userId: userId)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node (text will be added in savePersistentTweet)
@@ -3261,8 +3350,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Create and save persistent tweet with color
         savePersistentTweet(text: text, position: tweetPosition, color: pendingTweetColor)
         
-        // Create visual node with the selected color
-        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0, color: pendingTweetColor)
+        // Get userId for visual creation
+        let userId = firebaseService.getCurrentUserId() ?? currentUserId
+        
+        // Create visual node with the selected color and userId
+        let textNode = createTextNode(text: text, position: tweetPosition, distance: 0.0, color: pendingTweetColor, userId: userId)
         textNode.name = "my_tweet_\(UUID().uuidString)"
         
         // Store reference to the tweet node (text will be added in savePersistentTweet)
@@ -3425,7 +3517,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.8)
                 backgroundView.layer.cornerRadius = 8
                 backgroundView.layer.borderWidth = 1
-                backgroundView.layer.borderColor = UIColor.systemGreen.withAlphaComponent(0.3).cgColor
+                backgroundView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.3).cgColor
                 cell.backgroundView = backgroundView
                 
                 // Add delete button to cell
@@ -3596,8 +3688,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                         }
                     }
                     
+                    // Get userId for visual creation
+                    let userId = firebaseService.getCurrentUserId() ?? currentUserId
+                    
                     // Create a new text node with the updated design and correct color
-                    let newTextNode = createTextNode(text: tweetText, position: node.position, distance: 0.0, color: tweetColor)
+                    let newTextNode = createTextNode(text: tweetText, position: node.position, distance: 0.0, color: tweetColor, userId: userId)
                     newTextNode.name = nodeName // Keep the original name
                     
                     // Remove the old node
@@ -3649,6 +3744,56 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
+        }
+    }
+    
+    // MARK: - Board Texture with Username
+    private func createBoardTextureWithUsername(
+        boardSize: CGSize,
+        backgroundColor: UIColor,
+        cornerRadius: CGFloat,
+        username: String
+    ) -> UIImage {
+        // Convert meters to pixels (assuming 1000 pixels per meter for good quality)
+        let pixelSize = CGSize(
+            width: boardSize.width * 1000,
+            height: boardSize.height * 1000
+        )
+        
+        let renderer = UIGraphicsImageRenderer(size: pixelSize)
+        
+        return renderer.image { context in
+            let cgContext = context.cgContext
+            
+            // Create rounded rectangle path
+            let rect = CGRect(origin: .zero, size: pixelSize)
+            let pixelCornerRadius = cornerRadius * 1000
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: pixelCornerRadius)
+            
+            // Fill background
+            backgroundColor.setFill()
+            path.fill()
+            
+            // Add username in top-left corner with smaller, black text positioned higher
+            let usernameFont = UIFont.systemFont(ofSize: 16, weight: .medium) // Smaller font size
+            let usernameColor = UIColor.black // Black color for better readability
+            
+            let usernameAttributes: [NSAttributedString.Key: Any] = [
+                .font: usernameFont,
+                .foregroundColor: usernameColor
+            ]
+            
+            let usernameSize = username.size(withAttributes: usernameAttributes)
+            let usernameRect = CGRect(
+                x: 20, // Padding from left edge
+                y: 10, // Moved higher up (reduced from 20 to 10)
+                width: usernameSize.width,
+                height: usernameSize.height
+            )
+            
+            username.draw(in: usernameRect, withAttributes: usernameAttributes)
+            
+            print("🎨 Drew username '\(username)' at \(usernameRect) with font size 16")
         }
     }
 }
