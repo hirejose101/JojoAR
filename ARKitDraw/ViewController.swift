@@ -875,10 +875,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func setupCameraButton() {
         // Create Camera button
         cameraButton = UIButton(type: .system)
-        cameraButton.setTitle("📷", for: .normal)
-        cameraButton.backgroundColor = UIColor.neonGreen // Green circular background
-        cameraButton.setTitleColor(.white, for: .normal)
-        cameraButton.titleLabel?.font = UIFont.systemFont(ofSize: 30, weight: .medium) // Larger icon size
+        
+        // Use SF Symbol camera.circle instead of emoji
+        let cameraIcon = UIImage(systemName: "camera.circle")
+        cameraButton.setImage(cameraIcon, for: .normal)
+        cameraButton.tintColor = .white // White icon color
+        cameraButton.backgroundColor = UIColor.clear // No background
+        cameraButton.imageView?.contentMode = .scaleAspectFit
+        cameraButton.transform = CGAffineTransform(scaleX: 2.0, y: 2.0) // Make icon 2x bigger
         cameraButton.layer.cornerRadius = 25 // Circular background (half of width/height)
         cameraButton.contentVerticalAlignment = .center // Center vertically
         cameraButton.contentHorizontalAlignment = .center // Center horizontally
@@ -1217,7 +1221,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 
                 loadImageFromURL(imageURL) { [weak self] image in
                     if let image = image {
-                        let imageNode = self?.createImageNode(image: image, at: screenRelativePosition)
+                        let imageNode = self?.createImageNode(image: image, at: screenRelativePosition, userId: tweet.userId)
                         if let imageNode = imageNode {
                             imageNode.name = "nearby_tweet_\(tweet.id)"
                             self?.sceneView.scene.rootNode.addChildNode(imageNode)
@@ -2219,8 +2223,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
     }
     
-    private func createImageNode(image: UIImage, at position: SCNVector3) -> SCNNode {
+    private func createImageNode(image: UIImage, at position: SCNVector3, userId: String? = nil) -> SCNNode {
         print("🖼️ Creating image node with image size: \(image.size)")
+        
+        // Create a parent node to hold both image and username
+        let parentNode = SCNNode()
+        parentNode.position = position
         
         // Create a plane geometry for the image
         let plane = SCNPlane(width: 1.0, height: 1.0)
@@ -2235,18 +2243,39 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         print("🖼️ Material diffuse contents set: \(material.diffuse.contents != nil)")
         
-        // Create the node
+        // Create the image node
         let imageNode = SCNNode(geometry: plane)
-        imageNode.position = position
+        imageNode.position = SCNVector3(0, 0, 0) // Relative to parent
+        parentNode.addChildNode(imageNode)
         
         // Make it face the camera using billboard constraint (same as text tweets)
         let billboardConstraint = SCNBillboardConstraint()
         billboardConstraint.freeAxes = [.Y] // Only rotate around Y axis (keep upright)
-        imageNode.constraints = [billboardConstraint]
+        parentNode.constraints = [billboardConstraint]
         
         print("🖼️ Image node created at position: \(position)")
         
-        return imageNode
+        // Add username if userId is provided
+        if let userId = userId {
+            print("🔍 Fetching username for image tweet userId: \(userId)")
+            fetchUsername(userId: userId) { [weak self, weak parentNode] username in
+                print("🔍 Received username for image: \(username ?? "nil") for userId: \(userId)")
+                guard let username = username, let parentNode = parentNode else { 
+                    print("❌ Failed to get username or parentNode for image")
+                    return 
+                }
+                
+                // Update the image node with username
+                DispatchQueue.main.async {
+                    print("✅ Updating image with username: \(username)")
+                    self?.updateImageWithUsername(imageNode: parentNode, username: username)
+                }
+            }
+        } else {
+            print("❌ No userId provided for image tweet")
+        }
+        
+        return parentNode
     }
     
     private func displayTweetsInAR(tweets: [PersistentTweet]) {
@@ -2257,7 +2286,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 // Load image from URL and create node
                 loadImageFromURL(imageURL) { [weak self] image in
                     if let image = image {
-                        let imageNode = self?.createImageNode(image: image, at: tweet.worldPosition)
+                        let imageNode = self?.createImageNode(image: image, at: tweet.worldPosition, userId: tweet.userId)
                         if let imageNode = imageNode {
                             self?.sceneView.scene.rootNode.addChildNode(imageNode)
                             self?.tweetNodes.append(imageNode)
@@ -3747,6 +3776,37 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
     }
     
+    // MARK: - Image Username Display
+    private func updateImageWithUsername(imageNode: SCNNode, username: String) {
+        print("🎨 updateImageWithUsername called with username: \(username)")
+        
+        // Create a small username board above the image - single line height
+        let usernameBoardSize = CGSize(width: 0.3, height: 0.04) // Smaller height for single line
+        let usernameTexture = createBoardTextureWithUsername(
+            boardSize: usernameBoardSize,
+            backgroundColor: .white,
+            cornerRadius: 0.01,
+            username: username
+        )
+        
+        // Create username board node
+        let usernamePlane = SCNPlane(width: usernameBoardSize.width, height: usernameBoardSize.height)
+        let usernameMaterial = SCNMaterial()
+        usernameMaterial.diffuse.contents = usernameTexture
+        usernameMaterial.lightingModel = .constant
+        usernameMaterial.isDoubleSided = true
+        usernamePlane.materials = [usernameMaterial]
+        
+        let usernameBoardNode = SCNNode(geometry: usernamePlane)
+        // Position username board closer to the image
+        usernameBoardNode.position = SCNVector3(0, 0.55, 0.01) // Closer to image (reduced from 0.6 to 0.55)
+        
+        // Add username board as child of the image node
+        imageNode.addChildNode(usernameBoardNode)
+        
+        print("✅ Added username board to image with username: \(username)")
+    }
+    
     // MARK: - Board Texture with Username
     private func createBoardTextureWithUsername(
         boardSize: CGSize,
@@ -3786,7 +3846,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let usernameSize = username.size(withAttributes: usernameAttributes)
             let usernameRect = CGRect(
                 x: 20, // Padding from left edge
-                y: 10, // Moved higher up (reduced from 20 to 10)
+                y: 5, // Moved even higher up (reduced from 10 to 5)
                 width: usernameSize.width,
                 height: usernameSize.height
             )

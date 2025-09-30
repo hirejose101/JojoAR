@@ -195,8 +195,9 @@ extension MiniMapView: MKMapViewDelegate {
             // User location - white pin
             annotationView?.image = createPinImage(size: 20, color: UIColor.white)
         } else {
-            // Tweet location - green pin
-            annotationView?.image = createPinImage(size: 20, color: UIColor.neonGreen)
+            // Tweet location - neon green pin (using bright neon green instead of dark green)
+            let neonGreenColor = UIColor(red: 0.0, green: 0.75, blue: 0.39, alpha: 1.0) // Bright neon green #00bf63
+            annotationView?.image = createPinImage(size: 20, color: neonGreenColor)
         }
         
         return annotationView
