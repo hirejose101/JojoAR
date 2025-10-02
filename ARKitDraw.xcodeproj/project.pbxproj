@@ -12,6 +12,8 @@
 		431375B02E635FA0009A6055 /* UserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431375AF2E635FA0009A6055 /* UserProfile.swift */; };
 		431375B82E650F25009A6055 /* TweetInteractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431375B72E650F25009A6055 /* TweetInteractionView.swift */; };
 		431375BA2E650F31009A6055 /* CommentDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431375B92E650F31009A6055 /* CommentDisplayView.swift */; };
+		43452CB62E8DE0F400267AC7 /* SocialMediaWallViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43452CB52E8DE0F400267AC7 /* SocialMediaWallViewController.swift */; };
+		43452CB72E8DE0F400267AC7 /* FriendsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43452CB42E8DE0F400267AC7 /* FriendsViewController.swift */; };
 		434FCC202E84D0F100051A3C /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 434FCC1F2E84D0F100051A3C /* FirebaseStorage */; };
 		43A32DF91EF0672C004C32DB /* SCNVector3Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A32DF81EF0670B004C32DB /* SCNVector3Extensions.swift */; };
 		43DC63862E38770100734D1C /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 43DC63852E38770100734D1C /* FirebaseAnalytics */; };
@@ -38,6 +40,8 @@
 		431375AF2E635FA0009A6055 /* UserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfile.swift; sourceTree = "<group>"; };
 		431375B72E650F25009A6055 /* TweetInteractionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TweetInteractionView.swift; sourceTree = "<group>"; };
 		431375B92E650F31009A6055 /* CommentDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentDisplayView.swift; sourceTree = "<group>"; };
+		43452CB42E8DE0F400267AC7 /* FriendsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsViewController.swift; sourceTree = "<group>"; };
+		43452CB52E8DE0F400267AC7 /* SocialMediaWallViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialMediaWallViewController.swift; sourceTree = "<group>"; };
 		43A32DF81EF0670B004C32DB /* SCNVector3Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SCNVector3Extensions.swift; sourceTree = "<group>"; };
 		43DC638D2E39A18C00734D1C /* FirebaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseService.swift; sourceTree = "<group>"; };
 		43DC63912E39A21500734D1C /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
@@ -100,6 +104,8 @@
 		DC9869561EE8D7BE007DDA39 /* ARKitDraw */ = {
 			isa = PBXGroup;
 			children = (
+				43452CB42E8DE0F400267AC7 /* FriendsViewController.swift */,
+				43452CB52E8DE0F400267AC7 /* SocialMediaWallViewController.swift */,
 				431375B92E650F31009A6055 /* CommentDisplayView.swift */,
 				431375B72E650F25009A6055 /* TweetInteractionView.swift */,
 				431375AF2E635FA0009A6055 /* UserProfile.swift */,
@@ -211,6 +217,8 @@
 				43DC63982E39C85E00734D1C /* MiniMapView.swift in Sources */,
 				43DC639A2E39C85F00734D1C /* SCNGeometryExtensions.swift in Sources */,
 				431375AE2E635F86009A6055 /* RegistrationViewController.swift in Sources */,
+				43452CB62E8DE0F400267AC7 /* SocialMediaWallViewController.swift in Sources */,
+				43452CB72E8DE0F400267AC7 /* FriendsViewController.swift in Sources */,
 				DC9869581EE8D7BE007DDA39 /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -530,6 +530,552 @@ class FirebaseService {
     private func calculateDistance(from: CLLocation, to: CLLocation) -> Double {
         return from.distance(from: to)
     }
+    
+    // MARK: - Friends Management
+    
+    private let friendsCollection = "friends"
+    private let friendRequestsCollection = "friendRequests"
+    
+    // MARK: - Friend Requests
+    
+    func sendFriendRequest(toUsername: String, completion: @escaping (Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            print("Send friend request failed: User not authenticated")
+            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        print("Sending friend request from \(currentUserId) to username: \(toUsername)")
+        
+        // First, find the user by username
+        findUserByUsername(toUsername) { [weak self] targetUser, error in
+            if let error = error {
+                print("Find user error: \(error.localizedDescription)")
+                completion(error)
+                return
+            }
+            
+            guard let targetUser = targetUser else {
+                print("Target user not found for username: \(toUsername)")
+                completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not found"]))
+                return
+            }
+            
+            print("Found target user: \(targetUser.username) with ID: \(targetUser.id)")
+            
+            guard targetUser.id != currentUserId else {
+                print("Cannot send friend request to self")
+                completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot send friend request to yourself"]))
+                return
+            }
+            
+            // Get current user's username
+            self?.fetchUsername(userId: currentUserId) { currentUsername in
+                guard let currentUsername = currentUsername else {
+                    completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not fetch current user's username"]))
+                    return
+                }
+                
+                // Check if friend request already exists
+                self?.checkExistingFriendRequest(fromUserId: currentUserId, toUserId: targetUser.id) { existingRequest in
+                    if let existingRequest = existingRequest {
+                        if existingRequest.status == .pending {
+                            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Friend request already sent"]))
+                        } else {
+                            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Friend request already exists"]))
+                        }
+                        return
+                    }
+                    
+                    // Create new friend request
+                    let requestId = UUID().uuidString
+                    let friendRequest = FriendRequest(
+                        id: requestId,
+                        fromUserId: currentUserId,
+                        toUserId: targetUser.id,
+                        fromUsername: currentUsername,
+                        toUsername: targetUser.username
+                    )
+                    
+                    print("Creating friend request: \(friendRequest.toDictionary())")
+                    
+                    self?.db.collection(self?.friendRequestsCollection ?? "friendRequests").document(requestId).setData(friendRequest.toDictionary()) { error in
+                        if let error = error {
+                            print("Error creating friend request: \(error.localizedDescription)")
+                        } else {
+                            print("Successfully created friend request with ID: \(requestId)")
+                        }
+                        completion(error)
+                    }
+                }
+            }
+        }
+    }
+    
+    func findUserByUsername(_ username: String, completion: @escaping (UserProfile?, Error?) -> Void) {
+        db.collection(usersCollection)
+            .whereField("username", isEqualTo: username)
+            .limit(to: 1)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    completion(nil, error)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents,
+                      let firstDoc = documents.first else {
+                    completion(nil, nil)
+                    return
+                }
+                
+                let userProfile = UserProfile.fromDocument(firstDoc)
+                completion(userProfile, nil)
+            }
+    }
+    
+    func searchUsersByUsername(_ searchText: String, completion: @escaping ([UserProfile], Error?) -> Void) {
+        // Check if user is authenticated
+        guard let currentUserId = getCurrentUserId() else {
+            completion([], NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        print("Searching for users with text: '\(searchText)' by user: \(currentUserId)")
+        
+        // For partial matching, we need to get all users and filter client-side
+        // This is not ideal for large datasets, but works for now
+        db.collection(usersCollection)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Firebase search error: \(error.localizedDescription)")
+                    completion([], error)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    print("No documents found in users collection")
+                    completion([], nil)
+                    return
+                }
+                
+                print("Found \(documents.count) total users")
+                
+                let allUsers = documents.compactMap { UserProfile.fromDocument($0) }
+                let filteredUsers = allUsers.filter { user in
+                    user.username.lowercased().contains(searchText.lowercased())
+                }
+                
+                print("Found \(filteredUsers.count) matching users")
+                
+                // Sort by username for better UX
+                let sortedUsers = filteredUsers.sorted { $0.username < $1.username }
+                completion(sortedUsers, nil)
+            }
+    }
+    
+    func checkExistingFriendRequest(fromUserId: String, toUserId: String, completion: @escaping (FriendRequest?) -> Void) {
+        db.collection(friendRequestsCollection)
+            .whereField("fromUserId", isEqualTo: fromUserId)
+            .whereField("toUserId", isEqualTo: toUserId)
+            .limit(to: 1)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error checking existing friend request: \(error)")
+                    completion(nil)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents,
+                      let firstDoc = documents.first else {
+                    completion(nil)
+                    return
+                }
+                
+                let friendRequest = FriendRequest.fromDocument(firstDoc)
+                completion(friendRequest)
+            }
+    }
+    
+    func getPendingFriendRequests(completion: @escaping ([FriendRequest], Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion([], NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        print("Getting pending friend requests for user: \(currentUserId)")
+        
+        db.collection(friendRequestsCollection)
+            .whereField("toUserId", isEqualTo: currentUserId)
+            .whereField("status", isEqualTo: "pending")
+            .order(by: "createdAt", descending: true)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error getting pending requests: \(error.localizedDescription)")
+                    completion([], error)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    print("No documents found for pending requests")
+                    completion([], nil)
+                    return
+                }
+                
+                print("Found \(documents.count) pending friend request documents")
+                for doc in documents {
+                    print("Document ID: \(doc.documentID), Data: \(doc.data())")
+                }
+                
+                let requests = documents.compactMap { FriendRequest.fromDocument($0) }
+                print("Successfully parsed \(requests.count) friend requests")
+                completion(requests, nil)
+            }
+    }
+    
+    // MARK: - Testing Helper Functions
+    
+    func clearAllFriendRequests(completion: @escaping (Error?) -> Void) {
+        print("Clearing all friend requests...")
+        
+        db.collection(friendRequestsCollection).getDocuments { snapshot, error in
+            if let error = error {
+                print("Error getting friend requests to delete: \(error.localizedDescription)")
+                completion(error)
+                return
+            }
+            
+            guard let documents = snapshot?.documents else {
+                print("No friend requests found to delete")
+                completion(nil)
+                return
+            }
+            
+            print("Found \(documents.count) friend requests to delete")
+            
+            let batch = self.db.batch()
+            for document in documents {
+                batch.deleteDocument(document.reference)
+            }
+            
+            batch.commit { error in
+                if let error = error {
+                    print("Error deleting friend requests: \(error.localizedDescription)")
+                } else {
+                    print("Successfully deleted all friend requests")
+                }
+                completion(error)
+            }
+        }
+    }
+    
+    func respondToFriendRequest(requestId: String, accept: Bool, completion: @escaping (Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        let requestRef = db.collection(friendRequestsCollection).document(requestId)
+        
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
+            let requestDocument: DocumentSnapshot
+            do {
+                try requestDocument = transaction.getDocument(requestRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let requestData = requestDocument.data(),
+                  let fromUserId = requestData["fromUserId"] as? String,
+                  let toUserId = requestData["toUserId"] as? String,
+                  let fromUsername = requestData["fromUsername"] as? String,
+                  let toUsername = requestData["toUsername"] as? String,
+                  toUserId == currentUserId else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid friend request"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            let status = accept ? "accepted" : "declined"
+            transaction.updateData([
+                "status": status,
+                "respondedAt": Timestamp(date: Date())
+            ], forDocument: requestRef)
+            
+            // If accepted, add both users as friends
+            if accept {
+                let friendId1 = UUID().uuidString
+                let friendId2 = UUID().uuidString
+                
+                // Add friend relationship in both directions
+                let friend1 = Friend(id: friendId1, userId: fromUserId, username: fromUsername, firstName: requestData["fromFirstName"] as? String ?? "")
+                let friend2 = Friend(id: friendId2, userId: toUserId, username: toUsername, firstName: requestData["toFirstName"] as? String ?? "")
+                
+                transaction.setData(friend1.toDictionary(), forDocument: self.db.collection(self.friendsCollection).document("\(fromUserId)_\(toUserId)"))
+                transaction.setData(friend2.toDictionary(), forDocument: self.db.collection(self.friendsCollection).document("\(toUserId)_\(fromUserId)"))
+            }
+            
+            return nil
+        }) { (_, error) in
+            completion(error)
+        }
+    }
+    
+    // MARK: - Friends List
+    
+    func getFriends(completion: @escaping ([Friend], Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion([], NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        db.collection(friendsCollection)
+            .whereField("userId", isEqualTo: currentUserId)
+            .order(by: "addedAt", descending: true)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    completion([], error)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    completion([], nil)
+                    return
+                }
+                
+                let friends = documents.compactMap { Friend.fromDocument($0) }
+                completion(friends, nil)
+            }
+    }
+    
+    func removeFriend(friendId: String, completion: @escaping (Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        // Remove friendship from both sides
+        let friend1Ref = db.collection(friendsCollection).document("\(currentUserId)_\(friendId)")
+        let friend2Ref = db.collection(friendsCollection).document("\(friendId)_\(currentUserId)")
+        
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
+            transaction.deleteDocument(friend1Ref)
+            transaction.deleteDocument(friend2Ref)
+            return nil
+        }) { (_, error) in
+            completion(error)
+        }
+    }
+    
+    // MARK: - Friend Status Checking
+    
+    func checkIfFriends(userId: String, completion: @escaping (Bool) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion(false)
+            return
+        }
+        
+        let friendRef = db.collection(friendsCollection).document("\(currentUserId)_\(userId)")
+        friendRef.getDocument { snapshot, error in
+            completion(snapshot?.exists == true)
+        }
+    }
+    
+    func checkPendingFriendRequest(toUserId: String, completion: @escaping (Bool) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion(false)
+            return
+        }
+        
+        db.collection(friendRequestsCollection)
+            .whereField("fromUserId", isEqualTo: currentUserId)
+            .whereField("toUserId", isEqualTo: toUserId)
+            .whereField("status", isEqualTo: "pending")
+            .limit(to: 1)
+            .getDocuments { snapshot, error in
+                completion(snapshot?.documents.isEmpty == false)
+            }
+    }
+    
+    func checkReceivedFriendRequest(fromUserId: String, completion: @escaping (Bool) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion(false)
+            return
+        }
+        
+        db.collection(friendRequestsCollection)
+            .whereField("fromUserId", isEqualTo: fromUserId)
+            .whereField("toUserId", isEqualTo: currentUserId)
+            .whereField("status", isEqualTo: "pending")
+            .limit(to: 1)
+            .getDocuments { snapshot, error in
+                completion(snapshot?.documents.isEmpty == false)
+            }
+    }
+    
+    func acceptFriendRequest(requestId: String, completion: @escaping (Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        let requestRef = db.collection(friendRequestsCollection).document(requestId)
+        
+        // First get the request details
+        requestRef.getDocument { [weak self] snapshot, error in
+            if let error = error {
+                completion(error)
+                return
+            }
+            
+            guard let data = snapshot?.data(),
+                  let fromUserId = data["fromUserId"] as? String,
+                  let fromUsername = data["fromUsername"] as? String,
+                  let toUsername = data["toUsername"] as? String else {
+                completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid request data"]))
+                return
+            }
+            
+            // Update the request status to accepted
+            requestRef.updateData([
+                "status": "accepted",
+                "respondedAt": Date()
+            ]) { error in
+                if let error = error {
+                    completion(error)
+                    return
+                }
+                
+                // Create friendship records for both users
+                self?.createFriendship(fromUserId: fromUserId, toUserId: currentUserId, fromUsername: fromUsername, toUsername: toUsername, completion: completion)
+            }
+        }
+    }
+    
+    private func createFriendship(fromUserId: String, toUserId: String, fromUsername: String, toUsername: String, completion: @escaping (Error?) -> Void) {
+        let friend1Ref = db.collection(friendsCollection).document("\(fromUserId)_\(toUserId)")
+        let friend2Ref = db.collection(friendsCollection).document("\(toUserId)_\(fromUserId)")
+        
+        let friend1 = Friend(
+            id: "\(fromUserId)_\(toUserId)",
+            userId: fromUserId,
+            username: toUsername,
+            firstName: "", // We'll need to fetch this
+            addedAt: Date()
+        )
+        
+        let friend2 = Friend(
+            id: "\(toUserId)_\(fromUserId)",
+            userId: toUserId,
+            username: fromUsername,
+            firstName: "", // We'll need to fetch this
+            addedAt: Date()
+        )
+        
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
+            do {
+                try transaction.setData(from: friend1, forDocument: friend1Ref)
+                try transaction.setData(from: friend2, forDocument: friend2Ref)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }) { (_, error) in
+            completion(error)
+        }
+    }
+    
+    // MARK: - Social Media Wall
+    
+    func getSocialMediaFeed(completion: @escaping ([SocialMediaPost], Error?) -> Void) {
+        guard let currentUserId = getCurrentUserId() else {
+            completion([], NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
+            return
+        }
+        
+        // First get friends list
+        getFriends { [weak self] friends, error in
+            if let error = error {
+                completion([], error)
+                return
+            }
+            
+            let friendIds = friends.map { $0.userId }
+            let allUserIds = friendIds + [currentUserId] // Include own tweets
+            
+            // Fetch tweets from friends and self
+            self?.fetchTweetsByUserIds(allUserIds) { tweets, error in
+                if let error = error {
+                    completion([], error)
+                    return
+                }
+                
+                // Create social media posts with author info
+                var posts: [SocialMediaPost] = []
+                let dispatchGroup = DispatchGroup()
+                
+                for tweet in tweets {
+                    let isFromFriend = tweet.userId != currentUserId
+                    
+                    // Find author info
+                    if let friend = friends.first(where: { $0.userId == tweet.userId }) {
+                        let post = SocialMediaPost(
+                            id: tweet.id,
+                            tweet: tweet,
+                            authorUsername: friend.username,
+                            authorFirstName: friend.firstName,
+                            isFromFriend: isFromFriend
+                        )
+                        posts.append(post)
+                    } else if tweet.userId == currentUserId {
+                        // For own tweets, we need to get current user's info
+                        dispatchGroup.enter()
+                        self?.getUserProfile(userId: currentUserId) { userProfile, _ in
+                            if let userProfile = userProfile {
+                                let post = SocialMediaPost(
+                                    id: tweet.id,
+                                    tweet: tweet,
+                                    authorUsername: userProfile.username,
+                                    authorFirstName: userProfile.firstName,
+                                    isFromFriend: false
+                                )
+                                posts.append(post)
+                            }
+                            dispatchGroup.leave()
+                        }
+                    }
+                }
+                
+                // Wait for all async operations to complete
+                dispatchGroup.notify(queue: .main) {
+                    // Sort by timestamp (newest first)
+                    posts.sort { $0.tweet.timestamp > $1.tweet.timestamp }
+                    completion(posts, nil)
+                }
+            }
+        }
+    }
+    
+    func fetchTweetsByUserIds(_ userIds: [String], completion: @escaping ([PersistentTweet], Error?) -> Void) {
+        db.collection(tweetsCollection)
+            .whereField("userId", in: userIds)
+            .order(by: "timestamp", descending: true)
+            .getDocuments { [weak self] snapshot, error in
+                if let error = error {
+                    completion([], error)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    completion([], nil)
+                    return
+                }
+                
+                let tweets = documents.compactMap { self?.tweetFromDocument($0) }
+                completion(tweets, nil)
+            }
+    }
 }
 
 // MARK: - UIColor Extension

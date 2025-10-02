@@ -409,6 +409,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // MARK: - Username Cache
     private var usernameCache: [String: String] = [:]
     
+    private var socialWallButton: UIButton!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -674,6 +676,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Setup like and comment interaction views
         setupInteractionViews()
+        
+        // Setup Social Wall button
+        setupSocialWallButton()
     }
     
     func setupMiniMap() {
@@ -784,6 +789,33 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             seeTweetsButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
             seeTweetsButton.widthAnchor.constraint(equalToConstant: 150),
             seeTweetsButton.heightAnchor.constraint(equalToConstant: 50)
+        ])
+    }
+    
+    func setupSocialWallButton() {
+        // Create Social Wall button
+        socialWallButton = UIButton(type: .system)
+        socialWallButton.setTitle("Social Wall", for: .normal)
+        socialWallButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.8)
+        socialWallButton.setTitleColor(.white, for: .normal)
+        socialWallButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        socialWallButton.layer.cornerRadius = 12
+        socialWallButton.layer.shadowColor = UIColor.black.cgColor
+        socialWallButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        socialWallButton.layer.shadowOpacity = 0.6
+        socialWallButton.layer.shadowRadius = 8
+        socialWallButton.isHidden = false
+        socialWallButton.addTarget(self, action: #selector(socialWallButtonTapped), for: .touchUpInside)
+        socialWallButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(socialWallButton)
+        
+        // Position in bottom right
+        NSLayoutConstraint.activate([
+            socialWallButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            socialWallButton.bottomAnchor.constraint(equalTo: seeTweetsButton.topAnchor, constant: -10),
+            socialWallButton.widthAnchor.constraint(equalToConstant: 120),
+            socialWallButton.heightAnchor.constraint(equalToConstant: 50)
         ])
     }
     
@@ -1170,6 +1202,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.renderNearbyTweetsInAR()
         }
+    }
+    
+    @objc func socialWallButtonTapped() {
+        let socialWallVC = SocialMediaWallViewController()
+        let navController = UINavigationController(rootViewController: socialWallVC)
+        present(navController, animated: true)
     }
     
     func renderNearbyTweetsInAR() {
