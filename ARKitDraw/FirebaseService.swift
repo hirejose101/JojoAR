@@ -825,26 +825,44 @@ class FirebaseService {
     
     func getFriends(completion: @escaping ([Friend], Error?) -> Void) {
         guard let currentUserId = getCurrentUserId() else {
+            print("❌ getFriends: User not authenticated")
             completion([], NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
             return
         }
         
+        print("🔍 getFriends: Fetching friends for user: \(currentUserId)")
+        
+        // Query for documents where the ownerId equals the current user's ID
+        // Temporarily removing order by to bypass index requirement - will sort client-side
         db.collection(friendsCollection)
-            .whereField("userId", isEqualTo: currentUserId)
-            .order(by: "addedAt", descending: true)
+            .whereField("ownerId", isEqualTo: currentUserId)
             .getDocuments { snapshot, error in
                 if let error = error {
+                    print("❌ getFriends: Firebase error: \(error.localizedDescription)")
                     completion([], error)
                     return
                 }
                 
                 guard let documents = snapshot?.documents else {
+                    print("⚠️ getFriends: No documents returned")
                     completion([], nil)
                     return
                 }
                 
-                let friends = documents.compactMap { Friend.fromDocument($0) }
-                completion(friends, nil)
+                print("✅ getFriends: Found \(documents.count) friend documents")
+                
+                let friends = documents.compactMap { document in
+                    let friend = Friend.fromDocument(document)
+                    if friend == nil {
+                        print("⚠️ Failed to parse friend document: \(document.documentID)")
+                    }
+                    return friend
+                }
+                
+                print("✅ getFriends: Successfully parsed \(friends.count) friends")
+                // Sort by addedAt (newest first) on client side since we removed server-side ordering
+                let sortedFriends = friends.sorted { $0.addedAt > $1.addedAt }
+                completion(sortedFriends, nil)
             }
     }
     
