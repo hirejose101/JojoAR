@@ -638,12 +638,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyTableView.isHidden = true
         view.addSubview(historyTableView)
         
-        // Position history table view below the button
+        // Position history table view centered on screen
         NSLayoutConstraint.activate([
-            historyTableView.topAnchor.constraint(equalTo: historyButton.bottomAnchor, constant: 5),
-            historyTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            historyTableView.widthAnchor.constraint(equalToConstant: 250),
-            historyTableView.heightAnchor.constraint(equalToConstant: 200)
+            historyTableView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            historyTableView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            historyTableView.widthAnchor.constraint(equalToConstant: 300),
+            historyTableView.heightAnchor.constraint(equalToConstant: 400)
         ])
         
         // Setup mini-map
@@ -3571,11 +3571,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         if isUserAuthenticated {
             if indexPath.row < userTweets.count {
+                let tweet = userTweets[indexPath.row]
+                
                 // Show tweet content
-                cell.textLabel?.text = userTweets[indexPath.row].text
-                cell.textLabel?.textColor = UIColor.white
-                cell.textLabel?.font = getCustomFont(size: 16)
-                cell.textLabel?.textAlignment = .left
+                cell.textLabel?.text = nil  // Clear the default label
                 cell.backgroundColor = UIColor.black
                 cell.selectionStyle = .none
                 
@@ -3587,16 +3586,55 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 backgroundView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.3).cgColor
                 cell.backgroundView = backgroundView
                 
-                // Add delete button to cell
+                // Remove any existing subviews before adding new ones
+                cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                
+                // Create tweet text label
+                let tweetLabel = UILabel()
+                tweetLabel.text = tweet.text
+                tweetLabel.textColor = UIColor.white
+                tweetLabel.font = getCustomFont(size: 16)
+                tweetLabel.numberOfLines = 0
+                tweetLabel.translatesAutoresizingMaskIntoConstraints = false
+                cell.contentView.addSubview(tweetLabel)
+                
+                // Create likes and comments label
+                let statsLabel = UILabel()
+                statsLabel.text = "❤️ \(tweet.likeCount)  💬 \(tweet.commentCount)"
+                statsLabel.textColor = UIColor.gray
+                statsLabel.font = UIFont.systemFont(ofSize: 14)
+                statsLabel.translatesAutoresizingMaskIntoConstraints = false
+                cell.contentView.addSubview(statsLabel)
+                
+                // Add delete button
                 let deleteButton = UIButton(type: .system)
                 deleteButton.setTitle("🗑️", for: .normal)
                 deleteButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
                 deleteButton.tag = indexPath.row
                 deleteButton.addTarget(self, action: #selector(deleteButtonTapped(_:)), for: .touchUpInside)
-                deleteButton.frame = CGRect(x: cell.contentView.frame.width - 40, y: 5, width: 30, height: 30)
+                deleteButton.translatesAutoresizingMaskIntoConstraints = false
                 cell.contentView.addSubview(deleteButton)
+                
+                // Layout constraints
+                NSLayoutConstraint.activate([
+                    tweetLabel.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+                    tweetLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
+                    tweetLabel.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -8),
+                    
+                    statsLabel.topAnchor.constraint(equalTo: tweetLabel.bottomAnchor, constant: 4),
+                    statsLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
+                    statsLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+                    
+                    deleteButton.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -10),
+                    deleteButton.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                    deleteButton.widthAnchor.constraint(equalToConstant: 30),
+                    deleteButton.heightAnchor.constraint(equalToConstant: 30)
+                ])
             } else {
                 // Show sign-out button as last row
+                // Remove any existing subviews first
+                cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                
                 cell.textLabel?.text = "Sign Out"
                 cell.textLabel?.textColor = UIColor.white
                 cell.textLabel?.font = getCustomFont(size: 16)

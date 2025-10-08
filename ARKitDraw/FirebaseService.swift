@@ -833,7 +833,7 @@ class FirebaseService {
         print("🔍 getFriends: Fetching friends for user: \(currentUserId)")
         
         // Query for documents where the ownerId equals the current user's ID
-        // Temporarily removing order by to bypass index requirement - will sort client-side
+        // Note: Removing server-side sorting to avoid index requirement - sorting on client side instead
         db.collection(friendsCollection)
             .whereField("ownerId", isEqualTo: currentUserId)
             .getDocuments { snapshot, error in
@@ -860,7 +860,7 @@ class FirebaseService {
                 }
                 
                 print("✅ getFriends: Successfully parsed \(friends.count) friends")
-                // Sort by addedAt (newest first) on client side since we removed server-side ordering
+                // Sort by addedAt (newest first) on client side
                 let sortedFriends = friends.sorted { $0.addedAt > $1.addedAt }
                 completion(sortedFriends, nil)
             }
@@ -1019,58 +1019,41 @@ class FirebaseService {
                 return
             }
             
-            let friendIds = friends.map { $0.userId }
-            let allUserIds = friendIds + [currentUserId] // Include own tweets
+            // If no friends, return empty feed
+            guard !friends.isEmpty else {
+                completion([], nil)
+                return
+            }
             
-            // Fetch tweets from friends and self
-            self?.fetchTweetsByUserIds(allUserIds) { tweets, error in
+            let friendIds = friends.map { $0.userId }
+            // Only fetch friends' tweets, not your own (you have tweet history for that)
+            
+            // Fetch tweets from friends only
+            self?.fetchTweetsByUserIds(friendIds) { tweets, error in
                 if let error = error {
                     completion([], error)
                     return
                 }
                 
-                // Create social media posts with author info
-                var posts: [SocialMediaPost] = []
-                let dispatchGroup = DispatchGroup()
-                
-                for tweet in tweets {
-                    let isFromFriend = tweet.userId != currentUserId
-                    
-                    // Find author info
-                    if let friend = friends.first(where: { $0.userId == tweet.userId }) {
-                        let post = SocialMediaPost(
-                            id: tweet.id,
-                            tweet: tweet,
-                            authorUsername: friend.username,
-                            authorFirstName: friend.firstName,
-                            isFromFriend: isFromFriend
-                        )
-                        posts.append(post)
-                    } else if tweet.userId == currentUserId {
-                        // For own tweets, we need to get current user's info
-                        dispatchGroup.enter()
-                        self?.getUserProfile(userId: currentUserId) { userProfile, _ in
-                            if let userProfile = userProfile {
-                                let post = SocialMediaPost(
-                                    id: tweet.id,
-                                    tweet: tweet,
-                                    authorUsername: userProfile.username,
-                                    authorFirstName: userProfile.firstName,
-                                    isFromFriend: false
-                                )
-                                posts.append(post)
-                            }
-                            dispatchGroup.leave()
-                        }
+                // Create social media posts with author info from friends only
+                let posts: [SocialMediaPost] = tweets.compactMap { tweet in
+                    // Find the friend who posted this tweet
+                    guard let friend = friends.first(where: { $0.userId == tweet.userId }) else {
+                        return nil
                     }
+                    
+                    return SocialMediaPost(
+                        id: tweet.id,
+                        tweet: tweet,
+                        authorUsername: friend.username,
+                        authorFirstName: friend.firstName,
+                        isFromFriend: true  // All posts are from friends now
+                    )
                 }
                 
-                // Wait for all async operations to complete
-                dispatchGroup.notify(queue: .main) {
-                    // Sort by timestamp (newest first)
-                    posts.sort { $0.tweet.timestamp > $1.tweet.timestamp }
-                    completion(posts, nil)
-                }
+                // Sort by timestamp (newest first)
+                let sortedPosts = posts.sorted { $0.tweet.timestamp > $1.tweet.timestamp }
+                completion(sortedPosts, nil)
             }
         }
     }
