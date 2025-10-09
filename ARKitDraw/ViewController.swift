@@ -301,6 +301,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // UI elements for tweet history
     private var historyButton: UIButton!
     private var historyTableView: UITableView!
+    private var historyContainerView: UIView!
+    private var socialWallTableView: UITableView!
+    private var tabSegmentedControl: UISegmentedControl!
+    private var socialMediaPosts: [SocialMediaPost] = []
     private var isHistoryVisible = false
     
     // Color picker elements
@@ -622,29 +626,79 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
 
         
-        // Add history table view (initially hidden)
+        // Add history container view (initially hidden) - this will hold both tabs
+        let historyContainerView = UIView()
+        historyContainerView.backgroundColor = UIColor.black.withAlphaComponent(0.95)
+        historyContainerView.layer.cornerRadius = 15
+        historyContainerView.layer.masksToBounds = true
+        historyContainerView.layer.borderWidth = 2
+        historyContainerView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.6).cgColor
+        historyContainerView.translatesAutoresizingMaskIntoConstraints = false
+        historyContainerView.isHidden = true
+        view.addSubview(historyContainerView)
+        
+        // Position container centered on screen
+        NSLayoutConstraint.activate([
+            historyContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            historyContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            historyContainerView.widthAnchor.constraint(equalToConstant: 300),
+            historyContainerView.heightAnchor.constraint(equalToConstant: 450)
+        ])
+        
+        // Add segmented control for tabs
+        let segmentedControl = UISegmentedControl(items: ["My Tweets", "Social Wall"])
+        segmentedControl.selectedSegmentIndex = 0
+        segmentedControl.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        segmentedControl.selectedSegmentTintColor = UIColor.neonGreen
+        segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.white], for: .normal)
+        segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.black], for: .selected)
+        segmentedControl.addTarget(self, action: #selector(tabChanged(_:)), for: .valueChanged)
+        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
+        historyContainerView.addSubview(segmentedControl)
+        
+        // Add history table view (My Tweets)
         historyTableView = UITableView()
-        historyTableView.backgroundColor = UIColor.black.withAlphaComponent(0.95)
-        historyTableView.layer.cornerRadius = 15
-        historyTableView.layer.masksToBounds = true
-        historyTableView.layer.borderWidth = 2
-        historyTableView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.6).cgColor
+        historyTableView.backgroundColor = UIColor.clear
         historyTableView.separatorStyle = .none
         historyTableView.delegate = self
         historyTableView.dataSource = self
         historyTableView.register(UITableViewCell.self, forCellReuseIdentifier: "TweetCell")
-        
         historyTableView.translatesAutoresizingMaskIntoConstraints = false
-        historyTableView.isHidden = true
-        view.addSubview(historyTableView)
+        historyContainerView.addSubview(historyTableView)
         
-        // Position history table view centered on screen
+        // Add social wall table view
+        let socialWallTableView = UITableView()
+        socialWallTableView.backgroundColor = UIColor.clear
+        socialWallTableView.separatorStyle = .none
+        socialWallTableView.delegate = self
+        socialWallTableView.dataSource = self
+        socialWallTableView.register(UITableViewCell.self, forCellReuseIdentifier: "SocialWallCell")
+        socialWallTableView.translatesAutoresizingMaskIntoConstraints = false
+        socialWallTableView.isHidden = true
+        historyContainerView.addSubview(socialWallTableView)
+        
+        // Layout constraints
         NSLayoutConstraint.activate([
-            historyTableView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            historyTableView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            historyTableView.widthAnchor.constraint(equalToConstant: 300),
-            historyTableView.heightAnchor.constraint(equalToConstant: 400)
+            segmentedControl.topAnchor.constraint(equalTo: historyContainerView.topAnchor, constant: 10),
+            segmentedControl.leadingAnchor.constraint(equalTo: historyContainerView.leadingAnchor, constant: 10),
+            segmentedControl.trailingAnchor.constraint(equalTo: historyContainerView.trailingAnchor, constant: -10),
+            segmentedControl.heightAnchor.constraint(equalToConstant: 32),
+            
+            historyTableView.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 10),
+            historyTableView.leadingAnchor.constraint(equalTo: historyContainerView.leadingAnchor),
+            historyTableView.trailingAnchor.constraint(equalTo: historyContainerView.trailingAnchor),
+            historyTableView.bottomAnchor.constraint(equalTo: historyContainerView.bottomAnchor),
+            
+            socialWallTableView.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 10),
+            socialWallTableView.leadingAnchor.constraint(equalTo: historyContainerView.leadingAnchor),
+            socialWallTableView.trailingAnchor.constraint(equalTo: historyContainerView.trailingAnchor),
+            socialWallTableView.bottomAnchor.constraint(equalTo: historyContainerView.bottomAnchor)
         ])
+        
+        // Store references
+        self.historyContainerView = historyContainerView
+        self.socialWallTableView = socialWallTableView
+        self.tabSegmentedControl = segmentedControl
         
         // Setup mini-map
         setupMiniMap()
@@ -793,9 +847,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func setupSocialWallButton() {
-        // Create Social Wall button
+        // Create Friends button (renamed from Social Wall)
         socialWallButton = UIButton(type: .system)
-        socialWallButton.setTitle("Social Wall", for: .normal)
+        socialWallButton.setTitle("Friends", for: .normal)
         socialWallButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.8)
         socialWallButton.setTitleColor(.white, for: .normal)
         socialWallButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
@@ -1205,8 +1259,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     @objc func socialWallButtonTapped() {
-        let socialWallVC = SocialMediaWallViewController()
-        let navController = UINavigationController(rootViewController: socialWallVC)
+        // Open Friends view controller
+        let friendsVC = FriendsViewController()
+        let navController = UINavigationController(rootViewController: friendsVC)
         present(navController, animated: true)
     }
     
@@ -1440,6 +1495,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             // Load user's tweets from Firebase
             loadUserTweets()
+            
+            // Load social media feed for the new user
+            loadSocialMediaFeed()
         } else {
             // No authenticated user
             isUserAuthenticated = false
@@ -1448,6 +1506,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             // Clear local tweets when not authenticated
             userTweets.removeAll()
             tweetNodes.removeAll()
+            
+            // Clear social media posts
+            socialMediaPosts.removeAll()
             
             // Update history button text and refresh table view
             updateHistoryButtonText()
@@ -2424,6 +2485,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         } else {
             // Clear current user ID
             currentUserId = nil
+            // Clear social media posts
+            socialMediaPosts.removeAll()
             // Update UI to show sign-in state
             updateAuthenticationUI()
             print("User signed out successfully")
@@ -3488,20 +3551,60 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         isHistoryVisible.toggle()
         
         if isHistoryVisible {
-            historyTableView.isHidden = false
+            // Load social media feed when opening
+            loadSocialMediaFeed()
+            
+            historyContainerView.isHidden = false
             historyTableView.reloadData()
+            socialWallTableView.reloadData()
+            
+            // Reset to first tab
+            tabSegmentedControl.selectedSegmentIndex = 0
+            historyTableView.isHidden = false
+            socialWallTableView.isHidden = true
             
             // Animate in
-            historyTableView.alpha = 0
+            historyContainerView.alpha = 0
             UIView.animate(withDuration: 0.3) {
-                self.historyTableView.alpha = 1
+                self.historyContainerView.alpha = 1
             }
         } else {
             // Animate out
             UIView.animate(withDuration: 0.3) {
-                self.historyTableView.alpha = 0
+                self.historyContainerView.alpha = 0
             } completion: { _ in
-                self.historyTableView.isHidden = true
+                self.historyContainerView.isHidden = true
+            }
+        }
+    }
+    
+    @objc func tabChanged(_ sender: UISegmentedControl) {
+        if sender.selectedSegmentIndex == 0 {
+            // Show My Tweets
+            historyTableView.isHidden = false
+            socialWallTableView.isHidden = true
+        } else {
+            // Show Social Wall
+            historyTableView.isHidden = true
+            socialWallTableView.isHidden = false
+            socialWallTableView.reloadData()
+        }
+    }
+    
+    func loadSocialMediaFeed() {
+        print("🔍 ViewController: Loading social media feed...")
+        firebaseService.getSocialMediaFeed { [weak self] posts, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ ViewController: Error loading social media feed: \(error)")
+                } else {
+                    print("✅ ViewController: Loaded \(posts.count) posts")
+                    for (index, post) in posts.enumerated() {
+                        print("  Post \(index + 1): \(post.authorUsername) - \(post.tweet.text)")
+                    }
+                    self?.socialMediaPosts = posts
+                    self?.socialWallTableView.reloadData()
+                }
             }
         }
     }
@@ -3557,6 +3660,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     // MARK: - UITableViewDataSource
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        // Social wall table view
+        if tableView == socialWallTableView {
+            return socialMediaPosts.isEmpty ? 1 : socialMediaPosts.count
+        }
+        
+        // History table view
         if isUserAuthenticated {
             // Show tweets + sign out button
             return userTweets.count + 1
@@ -3567,6 +3676,75 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        // Check if this is the social wall table view
+        if tableView == socialWallTableView {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SocialWallCell", for: indexPath)
+            
+            if socialMediaPosts.isEmpty {
+                cell.textLabel?.text = "Add friends to see their thoughts across the world"
+                cell.textLabel?.textColor = UIColor.white
+                cell.textLabel?.textAlignment = .center
+                cell.textLabel?.numberOfLines = 0
+                cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            let post = socialMediaPosts[indexPath.row]
+            
+            // Clear default label
+            cell.textLabel?.text = nil
+            cell.backgroundColor = UIColor.clear
+            cell.selectionStyle = .none
+            
+            // Remove existing subviews
+            cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+            
+            // Create author label
+            let authorLabel = UILabel()
+            authorLabel.text = "\(post.authorFirstName) (@\(post.authorUsername))"
+            authorLabel.textColor = UIColor.neonGreen
+            authorLabel.font = UIFont.boldSystemFont(ofSize: 14)
+            authorLabel.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(authorLabel)
+            
+            // Create content label
+            let contentLabel = UILabel()
+            contentLabel.text = post.tweet.text
+            contentLabel.textColor = UIColor.white
+            contentLabel.font = UIFont.systemFont(ofSize: 14)
+            contentLabel.numberOfLines = 0
+            contentLabel.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(contentLabel)
+            
+            // Create stats label
+            let statsLabel = UILabel()
+            statsLabel.text = "❤️ \(post.tweet.likeCount)  💬 \(post.tweet.commentCount)"
+            statsLabel.textColor = UIColor.gray
+            statsLabel.font = UIFont.systemFont(ofSize: 12)
+            statsLabel.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(statsLabel)
+            
+            // Layout
+            NSLayoutConstraint.activate([
+                authorLabel.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+                authorLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
+                authorLabel.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -12),
+                
+                contentLabel.topAnchor.constraint(equalTo: authorLabel.bottomAnchor, constant: 4),
+                contentLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
+                contentLabel.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -12),
+                
+                statsLabel.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 4),
+                statsLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
+                statsLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
+            ])
+            
+            return cell
+        }
+        
+        // History table view (My Tweets)
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath)
         
         if isUserAuthenticated {
@@ -3687,6 +3865,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
+        // Social wall table view - no action on tap
+        if tableView == socialWallTableView {
+            return
+        }
+        
+        // History table view
         if isUserAuthenticated {
             if indexPath.row == userTweets.count {
                 // Sign-out button tapped

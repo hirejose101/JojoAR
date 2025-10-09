@@ -1012,6 +1012,8 @@ class FirebaseService {
             return
         }
         
+        print("🔍 getSocialMediaFeed: Current user ID: \(currentUserId)")
+        
         // First get friends list
         getFriends { [weak self] friends, error in
             if let error = error {
@@ -1019,13 +1021,20 @@ class FirebaseService {
                 return
             }
             
+            print("✅ getSocialMediaFeed: Found \(friends.count) friends")
+            for friend in friends {
+                print("  Friend: \(friend.username) (userId: \(friend.userId))")
+            }
+            
             // If no friends, return empty feed
             guard !friends.isEmpty else {
+                print("⚠️ getSocialMediaFeed: No friends, returning empty feed")
                 completion([], nil)
                 return
             }
             
             let friendIds = friends.map { $0.userId }
+            print("🔍 getSocialMediaFeed: Friend IDs to fetch tweets for: \(friendIds)")
             // Only fetch friends' tweets, not your own (you have tweet history for that)
             
             // Fetch tweets from friends only
