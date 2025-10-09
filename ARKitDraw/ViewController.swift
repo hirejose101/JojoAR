@@ -627,12 +627,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
 
         
         // Add history container view (initially hidden) - this will hold both tabs
+        // Transparent background so AR world is visible through gaps between bubbles
         let historyContainerView = UIView()
-        historyContainerView.backgroundColor = UIColor.black.withAlphaComponent(0.95)
-        historyContainerView.layer.cornerRadius = 15
-        historyContainerView.layer.masksToBounds = true
-        historyContainerView.layer.borderWidth = 2
-        historyContainerView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.6).cgColor
+        historyContainerView.backgroundColor = UIColor.clear
         historyContainerView.translatesAutoresizingMaskIntoConstraints = false
         historyContainerView.isHidden = true
         view.addSubview(historyContainerView)
@@ -645,14 +642,20 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             historyContainerView.heightAnchor.constraint(equalToConstant: 450)
         ])
         
-        // Add segmented control for tabs
+        // Add segmented control for tabs - styled as a floating bubble
         let segmentedControl = UISegmentedControl(items: ["My Tweets", "Social Wall"])
         segmentedControl.selectedSegmentIndex = 0
-        segmentedControl.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        segmentedControl.backgroundColor = UIColor.black.withAlphaComponent(0.9)
         segmentedControl.selectedSegmentTintColor = UIColor.neonGreen
         segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.white], for: .normal)
-        segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.black], for: .selected)
+        segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.white], for: .selected)
         segmentedControl.addTarget(self, action: #selector(tabChanged(_:)), for: .valueChanged)
+        
+        // Add iMessage-style bubble effect to segmented control
+        segmentedControl.layer.cornerRadius = 10
+        segmentedControl.layer.borderWidth = 1
+        segmentedControl.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.5).cgColor
+        
         segmentedControl.translatesAutoresizingMaskIntoConstraints = false
         historyContainerView.addSubview(segmentedControl)
         
@@ -670,6 +673,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         let socialWallTableView = UITableView()
         socialWallTableView.backgroundColor = UIColor.clear
         socialWallTableView.separatorStyle = .none
+        socialWallTableView.allowsSelection = false  // Disable selection to prevent any glow
         socialWallTableView.delegate = self
         socialWallTableView.dataSource = self
         socialWallTableView.register(UITableViewCell.self, forCellReuseIdentifier: "SocialWallCell")
@@ -3701,13 +3705,22 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             // Remove existing subviews
             cell.contentView.subviews.forEach { $0.removeFromSuperview() }
             
+            // Create bubble container for iMessage effect (no shadows)
+            let bubbleView = UIView()
+            bubbleView.backgroundColor = UIColor.black.withAlphaComponent(0.50)
+            bubbleView.layer.cornerRadius = 16
+            bubbleView.layer.borderWidth = 1.5
+            bubbleView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.4).cgColor
+            bubbleView.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(bubbleView)
+            
             // Create author label
             let authorLabel = UILabel()
             authorLabel.text = "\(post.authorFirstName) (@\(post.authorUsername))"
-            authorLabel.textColor = UIColor.neonGreen
+            authorLabel.textColor = UIColor.white
             authorLabel.font = UIFont.boldSystemFont(ofSize: 14)
             authorLabel.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(authorLabel)
+            bubbleView.addSubview(authorLabel)
             
             // Create content label
             let contentLabel = UILabel()
@@ -3716,7 +3729,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             contentLabel.font = UIFont.systemFont(ofSize: 14)
             contentLabel.numberOfLines = 0
             contentLabel.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(contentLabel)
+            bubbleView.addSubview(contentLabel)
             
             // Create stats label
             let statsLabel = UILabel()
@@ -3724,21 +3737,26 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             statsLabel.textColor = UIColor.gray
             statsLabel.font = UIFont.systemFont(ofSize: 12)
             statsLabel.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(statsLabel)
+            bubbleView.addSubview(statsLabel)
             
-            // Layout
+            // Layout - bubble has margins from cell edges to create gaps
             NSLayoutConstraint.activate([
-                authorLabel.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
-                authorLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
-                authorLabel.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -12),
+                bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 6),
+                bubbleView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 8),
+                bubbleView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
+                bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -6),
                 
-                contentLabel.topAnchor.constraint(equalTo: authorLabel.bottomAnchor, constant: 4),
-                contentLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
-                contentLabel.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -12),
+                authorLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+                authorLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                authorLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
                 
-                statsLabel.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 4),
-                statsLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
-                statsLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
+                contentLabel.topAnchor.constraint(equalTo: authorLabel.bottomAnchor, constant: 6),
+                contentLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                contentLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
+                
+                statsLabel.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 6),
+                statsLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                statsLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10)
             ])
             
             return cell
@@ -3753,19 +3771,21 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 
                 // Show tweet content
                 cell.textLabel?.text = nil  // Clear the default label
-                cell.backgroundColor = UIColor.black
+                cell.backgroundColor = UIColor.clear
+                cell.backgroundView = nil  // Clear any previous background view
                 cell.selectionStyle = .none
-                
-                // Style the cell background
-                let backgroundView = UIView()
-                backgroundView.backgroundColor = UIColor.black.withAlphaComponent(0.8)
-                backgroundView.layer.cornerRadius = 8
-                backgroundView.layer.borderWidth = 1
-                backgroundView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.3).cgColor
-                cell.backgroundView = backgroundView
                 
                 // Remove any existing subviews before adding new ones
                 cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                
+                // Create bubble container for iMessage effect (no shadows)
+                let bubbleView = UIView()
+                bubbleView.backgroundColor = UIColor.black.withAlphaComponent(0.50)
+                bubbleView.layer.cornerRadius = 16
+                bubbleView.layer.borderWidth = 1.5
+                bubbleView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.4).cgColor
+                bubbleView.translatesAutoresizingMaskIntoConstraints = false
+                cell.contentView.addSubview(bubbleView)
                 
                 // Create tweet text label
                 let tweetLabel = UILabel()
@@ -3774,7 +3794,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 tweetLabel.font = getCustomFont(size: 16)
                 tweetLabel.numberOfLines = 0
                 tweetLabel.translatesAutoresizingMaskIntoConstraints = false
-                cell.contentView.addSubview(tweetLabel)
+                bubbleView.addSubview(tweetLabel)
                 
                 // Create likes and comments label
                 let statsLabel = UILabel()
@@ -3782,7 +3802,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 statsLabel.textColor = UIColor.gray
                 statsLabel.font = UIFont.systemFont(ofSize: 14)
                 statsLabel.translatesAutoresizingMaskIntoConstraints = false
-                cell.contentView.addSubview(statsLabel)
+                bubbleView.addSubview(statsLabel)
                 
                 // Add delete button
                 let deleteButton = UIButton(type: .system)
@@ -3791,20 +3811,25 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 deleteButton.tag = indexPath.row
                 deleteButton.addTarget(self, action: #selector(deleteButtonTapped(_:)), for: .touchUpInside)
                 deleteButton.translatesAutoresizingMaskIntoConstraints = false
-                cell.contentView.addSubview(deleteButton)
+                bubbleView.addSubview(deleteButton)
                 
-                // Layout constraints
+                // Layout constraints - bubble has margins from cell to create gaps
                 NSLayoutConstraint.activate([
-                    tweetLabel.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
-                    tweetLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
+                    bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 6),
+                    bubbleView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 8),
+                    bubbleView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
+                    bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -6),
+                    
+                    tweetLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+                    tweetLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
                     tweetLabel.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -8),
                     
-                    statsLabel.topAnchor.constraint(equalTo: tweetLabel.bottomAnchor, constant: 4),
-                    statsLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 12),
-                    statsLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+                    statsLabel.topAnchor.constraint(equalTo: tweetLabel.bottomAnchor, constant: 6),
+                    statsLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                    statsLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
                     
-                    deleteButton.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -10),
-                    deleteButton.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                    deleteButton.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
+                    deleteButton.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
                     deleteButton.widthAnchor.constraint(equalToConstant: 30),
                     deleteButton.heightAnchor.constraint(equalToConstant: 30)
                 ])
