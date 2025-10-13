@@ -13,6 +13,7 @@ class SocialMediaWallViewController: UIViewController {
     private let tableView = UITableView()
     private let addFriendButton = UIButton(type: .system)
     private let friendsButton = UIButton(type: .system)
+    private let friendsButtonBadge = UILabel()
     private let refreshControl = UIRefreshControl()
     
     // MARK: - Lifecycle
@@ -21,6 +22,11 @@ class SocialMediaWallViewController: UIViewController {
         setupUI()
         setupFirebase()
         loadData()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadPendingRequests()
     }
     
     // MARK: - Setup
@@ -51,6 +57,16 @@ class SocialMediaWallViewController: UIViewController {
         friendsButton.addTarget(self, action: #selector(friendsTapped), for: .touchUpInside)
         friendsButton.translatesAutoresizingMaskIntoConstraints = false
         
+        // Friends button badge
+        friendsButtonBadge.backgroundColor = UIColor.red
+        friendsButtonBadge.textColor = UIColor.white
+        friendsButtonBadge.font = UIFont.boldSystemFont(ofSize: 12)
+        friendsButtonBadge.textAlignment = .center
+        friendsButtonBadge.layer.cornerRadius = 10
+        friendsButtonBadge.layer.masksToBounds = true
+        friendsButtonBadge.isHidden = true
+        friendsButtonBadge.translatesAutoresizingMaskIntoConstraints = false
+        
         // Table view
         tableView.backgroundColor = UIColor.black
         tableView.separatorStyle = .none
@@ -64,6 +80,7 @@ class SocialMediaWallViewController: UIViewController {
         view.addSubview(addFriendButton)
         view.addSubview(friendsButton)
         view.addSubview(tableView)
+        view.addSubview(friendsButtonBadge)
         
         NSLayoutConstraint.activate([
             addFriendButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
@@ -75,6 +92,11 @@ class SocialMediaWallViewController: UIViewController {
             friendsButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             friendsButton.widthAnchor.constraint(equalToConstant: 100),
             friendsButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            friendsButtonBadge.topAnchor.constraint(equalTo: friendsButton.topAnchor, constant: -5),
+            friendsButtonBadge.trailingAnchor.constraint(equalTo: friendsButton.trailingAnchor, constant: 5),
+            friendsButtonBadge.widthAnchor.constraint(equalToConstant: 20),
+            friendsButtonBadge.heightAnchor.constraint(equalToConstant: 20),
             
             tableView.topAnchor.constraint(equalTo: addFriendButton.bottomAnchor, constant: 10),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -139,10 +161,13 @@ class SocialMediaWallViewController: UIViewController {
         let friendCount = friends.count
         let pendingCount = pendingRequests.count
         
+        friendsButton.setTitle("Friends", for: .normal)
+        
         if pendingCount > 0 {
-            friendsButton.setTitle("Friends (\(friendCount)) • \(pendingCount)", for: .normal)
+            friendsButtonBadge.text = "\(pendingCount)"
+            friendsButtonBadge.isHidden = false
         } else {
-            friendsButton.setTitle("Friends (\(friendCount))", for: .normal)
+            friendsButtonBadge.isHidden = true
         }
     }
     

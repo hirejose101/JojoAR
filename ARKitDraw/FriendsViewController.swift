@@ -22,6 +22,11 @@ class FriendsViewController: UIViewController {
         setupFirebase()
     }
     
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadPendingRequests()
+    }
+    
     // MARK: - Setup
     private func setupUI() {
         view.backgroundColor = UIColor.black
@@ -114,9 +119,20 @@ class FriendsViewController: UIViewController {
                     print("Error loading pending requests: \(error.localizedDescription)")
                 } else {
                     self?.pendingRequests = requests
+                    self?.updateRequestsBadge()
                     self?.tableView.reloadData()
                 }
             }
+        }
+    }
+    
+    private func updateRequestsBadge() {
+        let pendingCount = pendingRequests.count
+        
+        if pendingCount > 0 {
+            segmentedControl.setTitle("Requests (\(pendingCount))", forSegmentAt: 1)
+        } else {
+            segmentedControl.setTitle("Requests", forSegmentAt: 1)
         }
     }
     
@@ -296,6 +312,7 @@ extension FriendsViewController: SearchResultCellDelegate {
                             } else {
                                 self?.showAlert(title: "Success", message: "You are now friends with \(user.username)")
                                 self?.loadPendingRequests()
+                                self?.delegate?.friendsDidUpdate()
                                 // Refresh search results to update button status
                                 if let searchText = self?.searchBar.text, !searchText.isEmpty {
                                     self?.searchUsers(searchText)
@@ -394,6 +411,7 @@ extension FriendsViewController: FriendRequestCellDelegate {
                     self?.showAlert(title: "Error", message: error.localizedDescription)
                 } else {
                     self?.pendingRequests.removeAll { $0.id == request.id }
+                    self?.updateRequestsBadge()
                     self?.tableView.reloadData()
                     self?.delegate?.friendsDidUpdate()
                 }
@@ -408,6 +426,7 @@ extension FriendsViewController: FriendRequestCellDelegate {
                     self?.showAlert(title: "Error", message: error.localizedDescription)
                 } else {
                     self?.pendingRequests.removeAll { $0.id == request.id }
+                    self?.updateRequestsBadge()
                     self?.tableView.reloadData()
                 }
             }

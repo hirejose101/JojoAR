@@ -307,6 +307,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var socialMediaPosts: [SocialMediaPost] = []
     private var isHistoryVisible = false
     
+    // UI elements for friends view
+    private var friendsContainerView: UIView!
+    private var friendsTableView: UITableView!
+    private var requestsTableView: UITableView!
+    private var searchTableView: UITableView!
+    private var friendsSegmentedControl: UISegmentedControl!
+    private var searchBar: UISearchBar!
+    private var friends: [Friend] = []
+    private var pendingRequests: [FriendRequest] = []
+    private var searchResults: [UserProfile] = []
+    private var isFriendsVisible = false
+    
     // Color picker elements
     private var colorPickerButton: UIButton!
     private var colorPickerView: UIView!
@@ -414,6 +426,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var usernameCache: [String: String] = [:]
     
     private var socialWallButton: UIButton!
+    private var socialWallButtonBadge: UILabel!
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -489,6 +502,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Only update if services are initialized
         if firebaseService != nil {
             updateAuthenticationUI()
+            loadPendingFriendRequests()
         }
     }
     
@@ -704,6 +718,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         self.socialWallTableView = socialWallTableView
         self.tabSegmentedControl = segmentedControl
         
+        // Setup Friends container
+        setupFriendsContainer()
+        
         // Setup mini-map
         setupMiniMap()
         
@@ -753,6 +770,123 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             miniMapView.widthAnchor.constraint(equalToConstant: 160),
             miniMapView.heightAnchor.constraint(equalToConstant: 160)
         ])
+    }
+    
+    func setupFriendsContainer() {
+        // Add friends container view (initially hidden)
+        let friendsContainerView = UIView()
+        friendsContainerView.backgroundColor = UIColor.clear
+        friendsContainerView.translatesAutoresizingMaskIntoConstraints = false
+        friendsContainerView.isHidden = true
+        view.addSubview(friendsContainerView)
+        
+        // Position container centered on screen
+        NSLayoutConstraint.activate([
+            friendsContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            friendsContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            friendsContainerView.widthAnchor.constraint(equalToConstant: 320),
+            friendsContainerView.heightAnchor.constraint(equalToConstant: 500)
+        ])
+        
+        // Add segmented control for tabs
+        let segmentedControl = UISegmentedControl(items: ["Friends", "Requests", "Add Friend"])
+        segmentedControl.selectedSegmentIndex = 0
+        segmentedControl.backgroundColor = UIColor.black.withAlphaComponent(0.9)
+        segmentedControl.selectedSegmentTintColor = UIColor.neonGreen
+        segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.white], for: .normal)
+        segmentedControl.setTitleTextAttributes([NSAttributedString.Key.foregroundColor: UIColor.black], for: .selected)
+        segmentedControl.addTarget(self, action: #selector(friendsTabChanged(_:)), for: .valueChanged)
+        segmentedControl.layer.cornerRadius = 8
+        segmentedControl.layer.masksToBounds = true
+        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
+        friendsContainerView.addSubview(segmentedControl)
+        
+        // Add Friends table view
+        let friendsTableView = UITableView()
+        friendsTableView.backgroundColor = UIColor.clear
+        friendsTableView.separatorStyle = .none
+        friendsTableView.delegate = self
+        friendsTableView.dataSource = self
+        friendsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "FriendBubbleCell")
+        friendsTableView.translatesAutoresizingMaskIntoConstraints = false
+        friendsContainerView.addSubview(friendsTableView)
+        
+        // Add Requests table view
+        let requestsTableView = UITableView()
+        requestsTableView.backgroundColor = UIColor.clear
+        requestsTableView.separatorStyle = .none
+        requestsTableView.delegate = self
+        requestsTableView.dataSource = self
+        requestsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "RequestBubbleCell")
+        requestsTableView.translatesAutoresizingMaskIntoConstraints = false
+        requestsTableView.isHidden = true
+        friendsContainerView.addSubview(requestsTableView)
+        
+        // Add Search bar for Add Friend tab
+        let searchBar = UISearchBar()
+        searchBar.placeholder = "Search by username..."
+        searchBar.backgroundColor = UIColor.clear
+        searchBar.barTintColor = UIColor.clear
+        searchBar.searchBarStyle = .minimal
+        searchBar.delegate = self
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        searchBar.isHidden = true
+        if let textField = searchBar.value(forKey: "searchField") as? UITextField {
+            textField.backgroundColor = UIColor.darkGray.withAlphaComponent(0.8)
+            textField.textColor = UIColor.white
+            textField.attributedPlaceholder = NSAttributedString(
+                string: "Search by username...",
+                attributes: [NSAttributedString.Key.foregroundColor: UIColor.lightGray]
+            )
+        }
+        friendsContainerView.addSubview(searchBar)
+        
+        // Add Search results table view
+        let searchTableView = UITableView()
+        searchTableView.backgroundColor = UIColor.clear
+        searchTableView.separatorStyle = .none
+        searchTableView.delegate = self
+        searchTableView.dataSource = self
+        searchTableView.register(UITableViewCell.self, forCellReuseIdentifier: "SearchBubbleCell")
+        searchTableView.translatesAutoresizingMaskIntoConstraints = false
+        searchTableView.isHidden = true
+        friendsContainerView.addSubview(searchTableView)
+        
+        // Layout constraints
+        NSLayoutConstraint.activate([
+            segmentedControl.topAnchor.constraint(equalTo: friendsContainerView.topAnchor, constant: 10),
+            segmentedControl.leadingAnchor.constraint(equalTo: friendsContainerView.leadingAnchor, constant: 10),
+            segmentedControl.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor, constant: -10),
+            segmentedControl.heightAnchor.constraint(equalToConstant: 32),
+            
+            friendsTableView.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 10),
+            friendsTableView.leadingAnchor.constraint(equalTo: friendsContainerView.leadingAnchor),
+            friendsTableView.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor),
+            friendsTableView.bottomAnchor.constraint(equalTo: friendsContainerView.bottomAnchor),
+            
+            requestsTableView.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 10),
+            requestsTableView.leadingAnchor.constraint(equalTo: friendsContainerView.leadingAnchor),
+            requestsTableView.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor),
+            requestsTableView.bottomAnchor.constraint(equalTo: friendsContainerView.bottomAnchor),
+            
+            searchBar.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 10),
+            searchBar.leadingAnchor.constraint(equalTo: friendsContainerView.leadingAnchor, constant: 10),
+            searchBar.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor, constant: -10),
+            searchBar.heightAnchor.constraint(equalToConstant: 44),
+            
+            searchTableView.topAnchor.constraint(equalTo: searchBar.bottomAnchor, constant: 5),
+            searchTableView.leadingAnchor.constraint(equalTo: friendsContainerView.leadingAnchor),
+            searchTableView.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor),
+            searchTableView.bottomAnchor.constraint(equalTo: friendsContainerView.bottomAnchor)
+        ])
+        
+        // Store references
+        self.friendsContainerView = friendsContainerView
+        self.friendsTableView = friendsTableView
+        self.requestsTableView = requestsTableView
+        self.searchTableView = searchTableView
+        self.friendsSegmentedControl = segmentedControl
+        self.searchBar = searchBar
     }
     
     func setupInteractionViews() {
@@ -868,12 +1002,30 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         view.addSubview(socialWallButton)
         
+        // Create badge for pending friend requests
+        socialWallButtonBadge = UILabel()
+        socialWallButtonBadge.backgroundColor = UIColor.red
+        socialWallButtonBadge.textColor = UIColor.white
+        socialWallButtonBadge.font = UIFont.boldSystemFont(ofSize: 12)
+        socialWallButtonBadge.textAlignment = .center
+        socialWallButtonBadge.layer.cornerRadius = 10
+        socialWallButtonBadge.layer.masksToBounds = true
+        socialWallButtonBadge.isHidden = true
+        socialWallButtonBadge.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(socialWallButtonBadge)
+        
         // Position in bottom right
         NSLayoutConstraint.activate([
             socialWallButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             socialWallButton.bottomAnchor.constraint(equalTo: seeTweetsButton.topAnchor, constant: -10),
             socialWallButton.widthAnchor.constraint(equalToConstant: 120),
-            socialWallButton.heightAnchor.constraint(equalToConstant: 50)
+            socialWallButton.heightAnchor.constraint(equalToConstant: 50),
+            
+            socialWallButtonBadge.topAnchor.constraint(equalTo: socialWallButton.topAnchor, constant: -5),
+            socialWallButtonBadge.trailingAnchor.constraint(equalTo: socialWallButton.trailingAnchor, constant: 5),
+            socialWallButtonBadge.widthAnchor.constraint(equalToConstant: 20),
+            socialWallButtonBadge.heightAnchor.constraint(equalToConstant: 20)
         ])
     }
     
@@ -1263,10 +1415,284 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     @objc func socialWallButtonTapped() {
-        // Open Friends view controller
-        let friendsVC = FriendsViewController()
-        let navController = UINavigationController(rootViewController: friendsVC)
-        present(navController, animated: true)
+        isFriendsVisible.toggle()
+        
+        if isFriendsVisible {
+            // Load friends data when opening
+            loadFriendsData()
+            
+            friendsContainerView.isHidden = false
+            friendsTableView.reloadData()
+            requestsTableView.reloadData()
+            searchTableView.reloadData()
+            
+            // Reset to first tab
+            friendsSegmentedControl.selectedSegmentIndex = 0
+            friendsTableView.isHidden = false
+            requestsTableView.isHidden = true
+            searchBar.isHidden = true
+            searchTableView.isHidden = true
+            
+            // Update badge on Requests tab
+            updateRequestsTabBadge()
+            
+            // Animate in
+            friendsContainerView.alpha = 0
+            UIView.animate(withDuration: 0.3) {
+                self.friendsContainerView.alpha = 1
+            }
+        } else {
+            // Animate out
+            UIView.animate(withDuration: 0.3) {
+                self.friendsContainerView.alpha = 0
+            } completion: { _ in
+                self.friendsContainerView.isHidden = true
+            }
+        }
+    }
+    
+    func loadPendingFriendRequests() {
+        firebaseService?.getPendingFriendRequests { [weak self] requests, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error loading pending requests: \(error.localizedDescription)")
+                } else {
+                    let pendingCount = requests.count
+                    self?.updateFriendsBadge(count: pendingCount)
+                }
+            }
+        }
+    }
+    
+    func updateFriendsBadge(count: Int) {
+        if count > 0 {
+            socialWallButtonBadge.text = "\(count)"
+            socialWallButtonBadge.isHidden = false
+        } else {
+            socialWallButtonBadge.isHidden = true
+        }
+    }
+    
+    func loadFriendsData() {
+        // Load friends list
+        firebaseService?.getFriends { [weak self] friends, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error loading friends: \(error.localizedDescription)")
+                } else {
+                    self?.friends = friends
+                    self?.friendsTableView.reloadData()
+                }
+            }
+        }
+        
+        // Load pending requests
+        firebaseService?.getPendingFriendRequests { [weak self] requests, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error loading pending requests: \(error.localizedDescription)")
+                } else {
+                    self?.pendingRequests = requests
+                    self?.requestsTableView.reloadData()
+                    self?.updateRequestsTabBadge()
+                    self?.updateFriendsBadge(count: requests.count)
+                }
+            }
+        }
+    }
+    
+    func updateRequestsTabBadge() {
+        let pendingCount = pendingRequests.count
+        if pendingCount > 0 {
+            friendsSegmentedControl.setTitle("Requests (\(pendingCount))", forSegmentAt: 1)
+        } else {
+            friendsSegmentedControl.setTitle("Requests", forSegmentAt: 1)
+        }
+    }
+    
+    @objc func friendsTabChanged(_ sender: UISegmentedControl) {
+        if sender.selectedSegmentIndex == 0 {
+            // Show Friends
+            friendsTableView.isHidden = false
+            requestsTableView.isHidden = true
+            searchBar.isHidden = true
+            searchTableView.isHidden = true
+        } else if sender.selectedSegmentIndex == 1 {
+            // Show Requests
+            friendsTableView.isHidden = true
+            requestsTableView.isHidden = false
+            searchBar.isHidden = true
+            searchTableView.isHidden = true
+        } else {
+            // Show Add Friend (search)
+            friendsTableView.isHidden = true
+            requestsTableView.isHidden = true
+            searchBar.isHidden = false
+            searchTableView.isHidden = false
+            searchBar.text = ""
+            searchResults.removeAll()
+            searchTableView.reloadData()
+        }
+    }
+    
+    @objc func acceptRequestTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < pendingRequests.count else { return }
+        let request = pendingRequests[index]
+        
+        firebaseService?.respondToFriendRequest(requestId: request.id, accept: true) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error accepting request: \(error.localizedDescription)")
+                } else {
+                    self?.pendingRequests.remove(at: index)
+                    self?.requestsTableView.reloadData()
+                    self?.loadFriendsData()
+                }
+            }
+        }
+    }
+    
+    @objc func declineRequestTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < pendingRequests.count else { return }
+        let request = pendingRequests[index]
+        
+        firebaseService?.respondToFriendRequest(requestId: request.id, accept: false) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error declining request: \(error.localizedDescription)")
+                } else {
+                    self?.pendingRequests.remove(at: index)
+                    self?.requestsTableView.reloadData()
+                    self?.loadFriendsData()
+                }
+            }
+        }
+    }
+    
+    @objc func sendFriendRequestTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < searchResults.count else { return }
+        let user = searchResults[index]
+        
+        firebaseService?.sendFriendRequest(toUsername: user.username) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error sending friend request: \(error.localizedDescription)")
+                } else {
+                    // Update search results
+                    if let searchText = self?.searchBar.text, !searchText.isEmpty {
+                        self?.searchUsers(searchText)
+                    }
+                }
+            }
+        }
+    }
+    
+    @objc func acceptSearchRequestTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < searchResults.count else { return }
+        let user = searchResults[index]
+        
+        // Find the pending request for this user
+        firebaseService?.getPendingFriendRequests { [weak self] requests, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error: \(error.localizedDescription)")
+                } else if let request = requests.first(where: { $0.fromUserId == user.id }) {
+                    self?.firebaseService?.acceptFriendRequest(requestId: request.id) { error in
+                        DispatchQueue.main.async {
+                            if let error = error {
+                                print("Error accepting request: \(error.localizedDescription)")
+                            } else {
+                                self?.loadFriendsData()
+                                if let searchText = self?.searchBar.text, !searchText.isEmpty {
+                                    self?.searchUsers(searchText)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    func searchUsers(_ searchText: String) {
+        guard !searchText.isEmpty else {
+            searchResults.removeAll()
+            searchTableView.reloadData()
+            return
+        }
+        
+        firebaseService?.searchUsersByUsername(searchText) { [weak self] users, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Search error: \(error.localizedDescription)")
+                } else {
+                    self?.searchResults = users
+                    self?.loadFriendStatusForSearchResults()
+                }
+            }
+        }
+    }
+    
+    func loadFriendStatusForSearchResults() {
+        guard let firebaseService = firebaseService else { return }
+        
+        let group = DispatchGroup()
+        
+        for (index, user) in searchResults.enumerated() {
+            group.enter()
+            
+            firebaseService.checkIfFriends(userId: user.id) { [weak self] isFriend in
+                DispatchQueue.main.async {
+                    guard let self = self, index < self.searchResults.count else {
+                        group.leave()
+                        return
+                    }
+                    
+                    if isFriend {
+                        self.searchResults[index].friendStatus = .friends
+                        group.leave()
+                    } else {
+                        firebaseService.checkPendingFriendRequest(toUserId: user.id) { [weak self] hasPendingRequest in
+                            DispatchQueue.main.async {
+                                guard let self = self, index < self.searchResults.count else {
+                                    group.leave()
+                                    return
+                                }
+                                
+                                if hasPendingRequest {
+                                    self.searchResults[index].friendStatus = .requestSent
+                                    group.leave()
+                                } else {
+                                    firebaseService.checkReceivedFriendRequest(fromUserId: user.id) { [weak self] hasReceivedRequest in
+                                        DispatchQueue.main.async {
+                                            guard let self = self, index < self.searchResults.count else {
+                                                group.leave()
+                                                return
+                                            }
+                                            
+                                            if hasReceivedRequest {
+                                                self.searchResults[index].friendStatus = .requestReceived
+                                            } else {
+                                                self.searchResults[index].friendStatus = .none
+                                            }
+                                            group.leave()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        group.notify(queue: .main) { [weak self] in
+            self?.searchTableView.reloadData()
+        }
     }
     
     func renderNearbyTweetsInAR() {
@@ -3669,6 +4095,19 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return socialMediaPosts.isEmpty ? 1 : socialMediaPosts.count
         }
         
+        // Friends table views
+        if tableView == friendsTableView {
+            return friends.isEmpty ? 1 : friends.count
+        }
+        
+        if tableView == requestsTableView {
+            return pendingRequests.isEmpty ? 1 : pendingRequests.count
+        }
+        
+        if tableView == searchTableView {
+            return searchResults.isEmpty ? 1 : searchResults.count
+        }
+        
         // History table view
         if isUserAuthenticated {
             // Show tweets + sign out button
@@ -3680,6 +4119,244 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        // Check if this is the friends table view
+        if tableView == friendsTableView {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "FriendBubbleCell", for: indexPath)
+            
+            if friends.isEmpty {
+                cell.textLabel?.text = "No friends yet. Add some friends!"
+                cell.textLabel?.textColor = UIColor.white
+                cell.textLabel?.textAlignment = .center
+                cell.textLabel?.numberOfLines = 0
+                cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            let friend = friends[indexPath.row]
+            cell.textLabel?.text = nil
+            cell.backgroundColor = UIColor.clear
+            cell.selectionStyle = .none
+            cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+            
+            // Create bubble container
+            let bubbleView = UIView()
+            bubbleView.backgroundColor = UIColor.black.withAlphaComponent(0.50)
+            bubbleView.layer.cornerRadius = 16
+            bubbleView.layer.borderWidth = 1.5
+            bubbleView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.4).cgColor
+            bubbleView.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(bubbleView)
+            
+            let nameLabel = UILabel()
+            nameLabel.text = friend.firstName
+            nameLabel.textColor = UIColor.white
+            nameLabel.font = UIFont.boldSystemFont(ofSize: 16)
+            nameLabel.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(nameLabel)
+            
+            let usernameLabel = UILabel()
+            usernameLabel.text = "@\(friend.username)"
+            usernameLabel.textColor = UIColor.gray
+            usernameLabel.font = UIFont.systemFont(ofSize: 14)
+            usernameLabel.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(usernameLabel)
+            
+            NSLayoutConstraint.activate([
+                bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
+                bubbleView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 8),
+                bubbleView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
+                bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -4),
+                bubbleView.heightAnchor.constraint(equalToConstant: 60),
+                
+                nameLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
+                nameLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                
+                usernameLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+                usernameLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12)
+            ])
+            
+            return cell
+        }
+        
+        // Check if this is the requests table view
+        if tableView == requestsTableView {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "RequestBubbleCell", for: indexPath)
+            
+            if pendingRequests.isEmpty {
+                cell.textLabel?.text = "No pending requests"
+                cell.textLabel?.textColor = UIColor.white
+                cell.textLabel?.textAlignment = .center
+                cell.textLabel?.numberOfLines = 0
+                cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            let request = pendingRequests[indexPath.row]
+            cell.textLabel?.text = nil
+            cell.backgroundColor = UIColor.clear
+            cell.selectionStyle = .none
+            cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+            
+            // Create bubble container
+            let bubbleView = UIView()
+            bubbleView.backgroundColor = UIColor.black.withAlphaComponent(0.50)
+            bubbleView.layer.cornerRadius = 16
+            bubbleView.layer.borderWidth = 1.5
+            bubbleView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.4).cgColor
+            bubbleView.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(bubbleView)
+            
+            let nameLabel = UILabel()
+            nameLabel.text = request.fromUsername
+            nameLabel.textColor = UIColor.white
+            nameLabel.font = UIFont.boldSystemFont(ofSize: 16)
+            nameLabel.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(nameLabel)
+            
+            let acceptButton = UIButton(type: .system)
+            acceptButton.setTitle("Accept", for: .normal)
+            acceptButton.setTitleColor(.white, for: .normal)
+            acceptButton.backgroundColor = UIColor.neonGreen
+            acceptButton.layer.cornerRadius = 8
+            acceptButton.tag = indexPath.row
+            acceptButton.addTarget(self, action: #selector(acceptRequestTapped(_:)), for: .touchUpInside)
+            acceptButton.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(acceptButton)
+            
+            let declineButton = UIButton(type: .system)
+            declineButton.setTitle("Decline", for: .normal)
+            declineButton.setTitleColor(.white, for: .normal)
+            declineButton.backgroundColor = UIColor.red.withAlphaComponent(0.7)
+            declineButton.layer.cornerRadius = 8
+            declineButton.tag = indexPath.row
+            declineButton.addTarget(self, action: #selector(declineRequestTapped(_:)), for: .touchUpInside)
+            declineButton.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(declineButton)
+            
+            NSLayoutConstraint.activate([
+                bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
+                bubbleView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 8),
+                bubbleView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
+                bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -4),
+                bubbleView.heightAnchor.constraint(equalToConstant: 60),
+                
+                nameLabel.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+                nameLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                
+                declineButton.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+                declineButton.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
+                declineButton.widthAnchor.constraint(equalToConstant: 70),
+                declineButton.heightAnchor.constraint(equalToConstant: 32),
+                
+                acceptButton.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+                acceptButton.trailingAnchor.constraint(equalTo: declineButton.leadingAnchor, constant: -8),
+                acceptButton.widthAnchor.constraint(equalToConstant: 70),
+                acceptButton.heightAnchor.constraint(equalToConstant: 32)
+            ])
+            
+            return cell
+        }
+        
+        // Check if this is the search table view
+        if tableView == searchTableView {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SearchBubbleCell", for: indexPath)
+            
+            if searchResults.isEmpty {
+                cell.textLabel?.text = "Search for friends by username"
+                cell.textLabel?.textColor = UIColor.white
+                cell.textLabel?.textAlignment = .center
+                cell.textLabel?.numberOfLines = 0
+                cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            let user = searchResults[indexPath.row]
+            cell.textLabel?.text = nil
+            cell.backgroundColor = UIColor.clear
+            cell.selectionStyle = .none
+            cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+            
+            // Create bubble container
+            let bubbleView = UIView()
+            bubbleView.backgroundColor = UIColor.black.withAlphaComponent(0.50)
+            bubbleView.layer.cornerRadius = 16
+            bubbleView.layer.borderWidth = 1.5
+            bubbleView.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.4).cgColor
+            bubbleView.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(bubbleView)
+            
+            let nameLabel = UILabel()
+            nameLabel.text = user.firstName
+            nameLabel.textColor = UIColor.white
+            nameLabel.font = UIFont.boldSystemFont(ofSize: 16)
+            nameLabel.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(nameLabel)
+            
+            let usernameLabel = UILabel()
+            usernameLabel.text = "@\(user.username)"
+            usernameLabel.textColor = UIColor.gray
+            usernameLabel.font = UIFont.systemFont(ofSize: 14)
+            usernameLabel.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(usernameLabel)
+            
+            let addButton = UIButton(type: .system)
+            addButton.setTitleColor(.white, for: .normal)
+            addButton.layer.cornerRadius = 8
+            addButton.tag = indexPath.row
+            addButton.translatesAutoresizingMaskIntoConstraints = false
+            
+            // Update button based on friend status
+            switch user.friendStatus {
+            case .none:
+                addButton.setTitle("Add", for: .normal)
+                addButton.backgroundColor = UIColor.neonGreen
+                addButton.isEnabled = true
+                addButton.addTarget(self, action: #selector(sendFriendRequestTapped(_:)), for: .touchUpInside)
+            case .friends:
+                addButton.setTitle("Friends", for: .normal)
+                addButton.backgroundColor = UIColor.gray
+                addButton.isEnabled = false
+            case .requestSent:
+                addButton.setTitle("Sent", for: .normal)
+                addButton.backgroundColor = UIColor.orange
+                addButton.isEnabled = false
+            case .requestReceived:
+                addButton.setTitle("Accept", for: .normal)
+                addButton.backgroundColor = UIColor.blue
+                addButton.isEnabled = true
+                addButton.addTarget(self, action: #selector(acceptSearchRequestTapped(_:)), for: .touchUpInside)
+            }
+            
+            bubbleView.addSubview(addButton)
+            
+            NSLayoutConstraint.activate([
+                bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
+                bubbleView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 8),
+                bubbleView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
+                bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -4),
+                bubbleView.heightAnchor.constraint(equalToConstant: 60),
+                
+                nameLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
+                nameLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                
+                usernameLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+                usernameLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                
+                addButton.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+                addButton.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
+                addButton.widthAnchor.constraint(equalToConstant: 70),
+                addButton.heightAnchor.constraint(equalToConstant: 32)
+            ])
+            
+            return cell
+        }
+        
         // Check if this is the social wall table view
         if tableView == socialWallTableView {
             let cell = tableView.dequeueReusableCell(withIdentifier: "SocialWallCell", for: indexPath)
@@ -4145,3 +4822,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
 
 
 
+
+// MARK: - UISearchBarDelegate
+extension ViewController: UISearchBarDelegate {
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        searchUsers(searchText)
+    }
+    
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.resignFirstResponder()
+    }
+}
