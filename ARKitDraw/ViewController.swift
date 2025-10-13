@@ -4266,11 +4266,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let cell = tableView.dequeueReusableCell(withIdentifier: "SearchBubbleCell", for: indexPath)
             
             if searchResults.isEmpty {
-                cell.textLabel?.text = "Search for friends by username"
-                cell.textLabel?.textColor = UIColor.white
-                cell.textLabel?.textAlignment = .center
-                cell.textLabel?.numberOfLines = 0
-                cell.textLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                cell.textLabel?.text = nil
                 cell.backgroundColor = UIColor.clear
                 cell.selectionStyle = .none
                 return cell
