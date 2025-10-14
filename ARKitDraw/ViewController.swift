@@ -1415,6 +1415,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     @objc func socialWallButtonTapped() {
+        // Close history view if it's open
+        if isHistoryVisible {
+            isHistoryVisible = false
+            historyContainerView.isHidden = true
+        }
+        
         isFriendsVisible.toggle()
         
         if isFriendsVisible {
@@ -3978,6 +3984,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     @objc func historyButtonTapped() {
+        // Close friends view if it's open
+        if isFriendsVisible {
+            isFriendsVisible = false
+            friendsContainerView.isHidden = true
+        }
+        
         isHistoryVisible.toggle()
         
         if isHistoryVisible {
