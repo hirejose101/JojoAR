@@ -297,6 +297,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // Array to track all tweet nodes and their text
     private var tweetNodes: [SCNNode] = []
     private var userTweets: [PersistentTweet] = []
+    private var selectedTweetForComment: String?
     
     // UI elements for tweet history
     private var historyButton: UIButton!
@@ -3775,19 +3776,33 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     func sendComment(_ text: String) {
         guard let tweetId = selectedTweetId,
-              let userId = firebaseService.getCurrentUserId(),
-              let userProfile = currentUserProfile else {
+              let userId = firebaseService.getCurrentUserId() else {
             print("Missing required data for comment")
             return
         }
         
-        firebaseService.addComment(tweetId: tweetId, text: text, userId: userId, username: userProfile.username) { [weak self] error in
+        // Get username from userProfile or fallback to UserDefaults
+        let username: String
+        if let userProfile = currentUserProfile {
+            username = userProfile.username
+        } else if let savedUsername = UserDefaults.standard.string(forKey: "username") {
+            username = savedUsername
+        } else {
+            print("Username not found")
+            return
+        }
+        
+        firebaseService.addComment(tweetId: tweetId, text: text, userId: userId, username: username) { [weak self] error in
             if let error = error {
                 print("Error adding comment: \(error)")
             } else {
                 DispatchQueue.main.async {
                     self?.hideCommentInput()
                     self?.showComments(for: tweetId)
+                    
+                    // Refresh social wall and tweet history to show updated comment count
+                    self?.loadSocialMediaFeed()
+                    self?.refreshUserTweets()
                 }
             }
         }
@@ -4416,13 +4431,25 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             contentLabel.translatesAutoresizingMaskIntoConstraints = false
             bubbleView.addSubview(contentLabel)
             
-            // Create stats label
-            let statsLabel = UILabel()
-            statsLabel.text = "❤️ \(post.tweet.likeCount)  💬 \(post.tweet.commentCount)"
-            statsLabel.textColor = UIColor.gray
-            statsLabel.font = UIFont.systemFont(ofSize: 12)
-            statsLabel.translatesAutoresizingMaskIntoConstraints = false
-            bubbleView.addSubview(statsLabel)
+            // Create interactive like button
+            let likeButton = UIButton(type: .system)
+            likeButton.setTitle("❤️ \(post.tweet.likeCount)", for: .normal)
+            likeButton.setTitleColor(UIColor.lightGray, for: .normal)
+            likeButton.titleLabel?.font = UIFont.systemFont(ofSize: 12)
+            likeButton.tag = indexPath.row
+            likeButton.addTarget(self, action: #selector(socialWallLikeButtonTapped(_:)), for: .touchUpInside)
+            likeButton.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(likeButton)
+            
+            // Create interactive comment button
+            let commentButton = UIButton(type: .system)
+            commentButton.setTitle("💬 \(post.tweet.commentCount)", for: .normal)
+            commentButton.setTitleColor(UIColor.lightGray, for: .normal)
+            commentButton.titleLabel?.font = UIFont.systemFont(ofSize: 12)
+            commentButton.tag = indexPath.row
+            commentButton.addTarget(self, action: #selector(socialWallCommentButtonTapped(_:)), for: .touchUpInside)
+            commentButton.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(commentButton)
             
             // Layout - bubble has margins from cell edges to create gaps
             NSLayoutConstraint.activate([
@@ -4439,9 +4466,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 contentLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
                 contentLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
                 
-                statsLabel.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 6),
-                statsLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
-                statsLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10)
+                likeButton.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 6),
+                likeButton.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                likeButton.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
+                
+                commentButton.centerYAnchor.constraint(equalTo: likeButton.centerYAnchor),
+                commentButton.leadingAnchor.constraint(equalTo: likeButton.trailingAnchor, constant: 16)
             ])
             
             return cell
@@ -4481,13 +4511,25 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 tweetLabel.translatesAutoresizingMaskIntoConstraints = false
                 bubbleView.addSubview(tweetLabel)
                 
-                // Create likes and comments label
-                let statsLabel = UILabel()
-                statsLabel.text = "❤️ \(tweet.likeCount)  💬 \(tweet.commentCount)"
-                statsLabel.textColor = UIColor.gray
-                statsLabel.font = UIFont.systemFont(ofSize: 14)
-                statsLabel.translatesAutoresizingMaskIntoConstraints = false
-                bubbleView.addSubview(statsLabel)
+                // Create interactive like button
+                let likeButton = UIButton(type: .system)
+                likeButton.setTitle("❤️ \(tweet.likeCount)", for: .normal)
+                likeButton.setTitleColor(UIColor.lightGray, for: .normal)
+                likeButton.titleLabel?.font = UIFont.systemFont(ofSize: 14)
+                likeButton.tag = indexPath.row
+                likeButton.addTarget(self, action: #selector(myTweetLikeButtonTapped(_:)), for: .touchUpInside)
+                likeButton.translatesAutoresizingMaskIntoConstraints = false
+                bubbleView.addSubview(likeButton)
+                
+                // Create interactive comment button
+                let commentButton = UIButton(type: .system)
+                commentButton.setTitle("💬 \(tweet.commentCount)", for: .normal)
+                commentButton.setTitleColor(UIColor.lightGray, for: .normal)
+                commentButton.titleLabel?.font = UIFont.systemFont(ofSize: 14)
+                commentButton.tag = indexPath.row
+                commentButton.addTarget(self, action: #selector(myTweetCommentButtonTapped(_:)), for: .touchUpInside)
+                commentButton.translatesAutoresizingMaskIntoConstraints = false
+                bubbleView.addSubview(commentButton)
                 
                 // Add delete button
                 let deleteButton = UIButton(type: .system)
@@ -4509,9 +4551,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                     tweetLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
                     tweetLabel.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -8),
                     
-                    statsLabel.topAnchor.constraint(equalTo: tweetLabel.bottomAnchor, constant: 6),
-                    statsLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
-                    statsLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
+                    likeButton.topAnchor.constraint(equalTo: tweetLabel.bottomAnchor, constant: 6),
+                    likeButton.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                    likeButton.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
+                    
+                    commentButton.centerYAnchor.constraint(equalTo: likeButton.centerYAnchor),
+                    commentButton.leadingAnchor.constraint(equalTo: likeButton.trailingAnchor, constant: 16),
                     
                     deleteButton.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -10),
                     deleteButton.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
@@ -4569,6 +4614,127 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         print("🗑️ Tweet text at index \(index): \(userTweets[index].text)")
         print("🗑️ Total tweets before delete: \(userTweets.count)")
         deleteTweet(at: index)
+    }
+    
+    // MARK: - Like and Comment Button Actions
+    @objc func socialWallLikeButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < socialMediaPosts.count else { return }
+        let post = socialMediaPosts[index]
+        
+        guard let userId = firebaseService?.getCurrentUserId() else {
+            print("❌ User not authenticated")
+            return
+        }
+        
+        print("❤️ Like button tapped for social wall tweet: \(post.tweet.id)")
+        
+        // Toggle like on this tweet
+        firebaseService?.toggleLike(tweetId: post.tweet.id, userId: userId) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Error toggling like: \(error.localizedDescription)")
+                } else {
+                    print("✅ Like toggled successfully")
+                    // Reload social media feed to update counts
+                    self?.loadSocialMediaFeed()
+                }
+            }
+        }
+    }
+    
+    @objc func socialWallCommentButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < socialMediaPosts.count else { return }
+        let post = socialMediaPosts[index]
+        
+        print("💬 Comment button tapped for social wall tweet: \(post.tweet.id)")
+        
+        // Close the history/friends views
+        if isHistoryVisible {
+            isHistoryVisible = false
+            historyContainerView.isHidden = true
+        }
+        if isFriendsVisible {
+            isFriendsVisible = false
+            friendsContainerView.isHidden = true
+        }
+        
+        // Open comment input for this tweet
+        openCommentInput(for: post.tweet.id)
+    }
+    
+    @objc func myTweetLikeButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < userTweets.count else { return }
+        let tweet = userTweets[index]
+        
+        guard let userId = firebaseService?.getCurrentUserId() else {
+            print("❌ User not authenticated")
+            return
+        }
+        
+        print("❤️ Like button tapped for my tweet: \(tweet.id)")
+        
+        // Toggle like on this tweet
+        firebaseService?.toggleLike(tweetId: tweet.id, userId: userId) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Error toggling like: \(error.localizedDescription)")
+                } else {
+                    print("✅ Like toggled successfully")
+                    // Reload user tweets to update counts
+                    self?.refreshUserTweets()
+                }
+            }
+        }
+    }
+    
+    @objc func myTweetCommentButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < userTweets.count else { return }
+        let tweet = userTweets[index]
+        
+        print("💬 Comment button tapped for my tweet: \(tweet.id)")
+        
+        // Close the history/friends views
+        if isHistoryVisible {
+            isHistoryVisible = false
+            historyContainerView.isHidden = true
+        }
+        if isFriendsVisible {
+            isFriendsVisible = false
+            friendsContainerView.isHidden = true
+        }
+        
+        // Open comment input for this tweet
+        openCommentInput(for: tweet.id)
+    }
+    
+    func openCommentInput(for tweetId: String) {
+        // Set the selected tweet ID
+        selectedTweetId = tweetId
+        
+        // Show the comment display view with all existing comments
+        // and the option to add a new comment
+        showComments(for: tweetId)
+    }
+    
+    func refreshUserTweets() {
+        guard let userId = firebaseService.getCurrentUserId() else { return }
+        
+        // Fetch updated user tweets from Firebase
+        firebaseService.fetchNearbyTweets(latitude: 0, longitude: 0, radius: Double.infinity) { [weak self] tweets, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error refreshing user tweets: \(error)")
+                } else {
+                    // Update only the user's tweets
+                    self?.userTweets = tweets.filter { $0.userId == userId }
+                    self?.historyTableView.reloadData()
+                }
+            }
+        }
     }
     
     // MARK: - UITableViewDelegate
