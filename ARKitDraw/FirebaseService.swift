@@ -768,56 +768,157 @@ class FirebaseService {
         }
     }
     
+    func clearAllFriends(completion: @escaping (Error?) -> Void) {
+        print("Clearing all friend records...")
+        
+        db.collection(friendsCollection).getDocuments { snapshot, error in
+            if let error = error {
+                print("Error getting friend records to delete: \(error.localizedDescription)")
+                completion(error)
+                return
+            }
+            
+            guard let documents = snapshot?.documents else {
+                print("No friend records found to delete")
+                completion(nil)
+                return
+            }
+            
+            print("Found \(documents.count) friend records to delete")
+            
+            let batch = self.db.batch()
+            for document in documents {
+                batch.deleteDocument(document.reference)
+            }
+            
+            batch.commit { error in
+                if let error = error {
+                    print("Error deleting friend records: \(error.localizedDescription)")
+                } else {
+                    print("Successfully deleted all friend records")
+                }
+                completion(error)
+            }
+        }
+    }
+    
+    func clearFriendsForUser(username: String, completion: @escaping (Error?) -> Void) {
+        print("Clearing all friends for user: \(username)")
+        
+        // First find the user by username
+        findUserByUsername(username) { [weak self] user, error in
+            if let error = error {
+                print("Error finding user: \(error.localizedDescription)")
+                completion(error)
+                return
+            }
+            
+            guard let user = user else {
+                completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not found"]))
+                return
+            }
+            
+            let userId = user.id
+            print("Found user with ID: \(userId), clearing their friend records...")
+            
+            // Get all friend records where this user is involved
+            self?.db.collection(self?.friendsCollection ?? "friends").getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error getting friend records: \(error.localizedDescription)")
+                    completion(error)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    print("No friend records found")
+                    completion(nil)
+                    return
+                }
+                
+                // Filter documents that contain this userId in the document ID
+                let relevantDocs = documents.filter { doc in
+                    doc.documentID.contains(userId)
+                }
+                
+                print("Found \(relevantDocs.count) friend records to delete for user \(username)")
+                
+                if relevantDocs.isEmpty {
+                    completion(nil)
+                    return
+                }
+                
+                let batch = self?.db.batch()
+                for document in relevantDocs {
+                    print("Deleting friend record: \(document.documentID)")
+                    batch?.deleteDocument(document.reference)
+                }
+                
+                batch?.commit { error in
+                    if let error = error {
+                        print("Error deleting friend records: \(error.localizedDescription)")
+                    } else {
+                        print("Successfully deleted \(relevantDocs.count) friend records for user \(username)")
+                    }
+                    completion(error)
+                }
+            }
+        }
+    }
+    
     func respondToFriendRequest(requestId: String, accept: Bool, completion: @escaping (Error?) -> Void) {
         guard let currentUserId = getCurrentUserId() else {
+            print("❌ respondToFriendRequest: User not authenticated")
             completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"]))
             return
         }
         
+        print("📝 respondToFriendRequest: \(accept ? "Accepting" : "Declining") request \(requestId)")
+        
         let requestRef = db.collection(friendRequestsCollection).document(requestId)
         
-        db.runTransaction({ (transaction, errorPointer) -> Any? in
-            let requestDocument: DocumentSnapshot
-            do {
-                try requestDocument = transaction.getDocument(requestRef)
-            } catch let fetchError as NSError {
-                errorPointer?.pointee = fetchError
-                return nil
+        // First get the request data
+        requestRef.getDocument { [weak self] snapshot, error in
+            if let error = error {
+                print("❌ respondToFriendRequest: Error fetching request: \(error.localizedDescription)")
+                completion(error)
+                return
             }
             
-            guard let requestData = requestDocument.data(),
+            guard let requestData = snapshot?.data(),
                   let fromUserId = requestData["fromUserId"] as? String,
                   let toUserId = requestData["toUserId"] as? String,
                   let fromUsername = requestData["fromUsername"] as? String,
                   let toUsername = requestData["toUsername"] as? String,
                   toUserId == currentUserId else {
-                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid friend request"])
-                errorPointer?.pointee = error
-                return nil
+                print("❌ respondToFriendRequest: Invalid friend request data")
+                completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid friend request"]))
+                return
             }
             
+            print("✅ respondToFriendRequest: Valid request from \(fromUsername) to \(toUsername)")
+            
+            // Update the request status
             let status = accept ? "accepted" : "declined"
-            transaction.updateData([
+            requestRef.updateData([
                 "status": status,
                 "respondedAt": Timestamp(date: Date())
-            ], forDocument: requestRef)
-            
-            // If accepted, add both users as friends
-            if accept {
-                let friendId1 = UUID().uuidString
-                let friendId2 = UUID().uuidString
+            ]) { error in
+                if let error = error {
+                    print("❌ respondToFriendRequest: Error updating request status: \(error.localizedDescription)")
+                    completion(error)
+                    return
+                }
                 
-                // Add friend relationship in both directions
-                let friend1 = Friend(id: friendId1, userId: fromUserId, username: fromUsername, firstName: requestData["fromFirstName"] as? String ?? "")
-                let friend2 = Friend(id: friendId2, userId: toUserId, username: toUsername, firstName: requestData["toFirstName"] as? String ?? "")
+                print("✅ respondToFriendRequest: Request status updated to \(status)")
                 
-                transaction.setData(friend1.toDictionary(), forDocument: self.db.collection(self.friendsCollection).document("\(fromUserId)_\(toUserId)"))
-                transaction.setData(friend2.toDictionary(), forDocument: self.db.collection(self.friendsCollection).document("\(toUserId)_\(fromUserId)"))
+                // If accepted, create friendship
+                if accept {
+                    print("🤝 respondToFriendRequest: Creating friendship...")
+                    self?.createFriendship(fromUserId: fromUserId, toUserId: toUserId, fromUsername: fromUsername, toUsername: toUsername, completion: completion)
+                } else {
+                    completion(nil)
+                }
             }
-            
-            return nil
-        }) { (_, error) in
-            completion(error)
         }
     }
     
@@ -971,36 +1072,86 @@ class FirebaseService {
     }
     
     private func createFriendship(fromUserId: String, toUserId: String, fromUsername: String, toUsername: String, completion: @escaping (Error?) -> Void) {
+        print("🤝 createFriendship: Creating friendship between \(fromUsername) and \(toUsername)")
+        
         let friend1Ref = db.collection(friendsCollection).document("\(fromUserId)_\(toUserId)")
         let friend2Ref = db.collection(friendsCollection).document("\(toUserId)_\(fromUserId)")
         
-        let friend1 = Friend(
-            id: "\(fromUserId)_\(toUserId)",
-            userId: fromUserId,
-            username: toUsername,
-            firstName: "", // We'll need to fetch this
-            addedAt: Date()
-        )
+        // Fetch both users' first names
+        let group = DispatchGroup()
+        var fromFirstName = ""
+        var toFirstName = ""
+        var fetchError: Error?
         
-        let friend2 = Friend(
-            id: "\(toUserId)_\(fromUserId)",
-            userId: toUserId,
-            username: fromUsername,
-            firstName: "", // We'll need to fetch this
-            addedAt: Date()
-        )
-        
-        db.runTransaction({ (transaction, errorPointer) -> Any? in
-            do {
-                try transaction.setData(from: friend1, forDocument: friend1Ref)
-                try transaction.setData(from: friend2, forDocument: friend2Ref)
-                return nil
-            } catch {
-                errorPointer?.pointee = error as NSError
-                return nil
+        group.enter()
+        db.collection(usersCollection).document(fromUserId).getDocument { snapshot, error in
+            if let error = error {
+                print("❌ createFriendship: Error fetching fromUser: \(error.localizedDescription)")
+                fetchError = error
+            } else {
+                fromFirstName = snapshot?.data()?["firstName"] as? String ?? ""
+                print("✅ createFriendship: Got fromUser firstName: \(fromFirstName)")
             }
-        }) { (_, error) in
-            completion(error)
+            group.leave()
+        }
+        
+        group.enter()
+        db.collection(usersCollection).document(toUserId).getDocument { snapshot, error in
+            if let error = error {
+                print("❌ createFriendship: Error fetching toUser: \(error.localizedDescription)")
+                fetchError = error
+            } else {
+                toFirstName = snapshot?.data()?["firstName"] as? String ?? ""
+                print("✅ createFriendship: Got toUser firstName: \(toFirstName)")
+            }
+            group.leave()
+        }
+        
+        group.notify(queue: .main) { [weak self] in
+            if let fetchError = fetchError {
+                print("❌ createFriendship: Failed to fetch user data")
+                completion(fetchError)
+                return
+            }
+            
+            // friend1: fromUserId owns a record pointing to toUserId as their friend
+            let friend1 = Friend(
+                id: "\(fromUserId)_\(toUserId)",
+                ownerId: fromUserId,
+                userId: toUserId,
+                username: toUsername,
+                firstName: toFirstName,
+                addedAt: Date()
+            )
+            
+            // friend2: toUserId owns a record pointing to fromUserId as their friend
+            let friend2 = Friend(
+                id: "\(toUserId)_\(fromUserId)",
+                ownerId: toUserId,
+                userId: fromUserId,
+                username: fromUsername,
+                firstName: fromFirstName,
+                addedAt: Date()
+            )
+            
+            print("💾 createFriendship: Saving friend records...")
+            print("  - Record 1: ownerId=\(friend1.ownerId), userId=\(friend1.userId), username=\(friend1.username), firstName=\(friend1.firstName)")
+            print("  - Record 2: ownerId=\(friend2.ownerId), userId=\(friend2.userId), username=\(friend2.username), firstName=\(friend2.firstName)")
+            
+            // Use batch write for atomicity
+            let batch = self?.db.batch()
+            batch?.setData(friend1.toDictionary(), forDocument: friend1Ref)
+            batch?.setData(friend2.toDictionary(), forDocument: friend2Ref)
+            
+            batch?.commit { error in
+                if let error = error {
+                    print("❌ createFriendship: Error saving friend records: \(error.localizedDescription)")
+                    completion(error)
+                } else {
+                    print("✅ createFriendship: Successfully created friendship!")
+                    completion(nil)
+                }
+            }
         }
     }
     

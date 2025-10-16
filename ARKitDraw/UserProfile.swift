@@ -137,13 +137,15 @@ enum FriendRequestStatus: String, Codable, CaseIterable {
 
 struct Friend: Codable, Identifiable {
     let id: String
-    let userId: String
+    let ownerId: String  // The user who owns this friend record
+    let userId: String   // The friend's user ID
     let username: String
     let firstName: String
     let addedAt: Date
     
-    init(id: String, userId: String, username: String, firstName: String, addedAt: Date = Date()) {
+    init(id: String, ownerId: String, userId: String, username: String, firstName: String, addedAt: Date = Date()) {
         self.id = id
+        self.ownerId = ownerId
         self.userId = userId
         self.username = username
         self.firstName = firstName
@@ -154,6 +156,7 @@ struct Friend: Codable, Identifiable {
     func toDictionary() -> [String: Any] {
         return [
             "id": id,
+            "ownerId": ownerId,
             "userId": userId,
             "username": username,
             "firstName": firstName,
@@ -165,6 +168,7 @@ struct Friend: Codable, Identifiable {
     static func fromDocument(_ document: DocumentSnapshot) -> Friend? {
         guard let data = document.data(),
               let id = data["id"] as? String,
+              let ownerId = data["ownerId"] as? String,
               let userId = data["userId"] as? String,
               let username = data["username"] as? String,
               let firstName = data["firstName"] as? String,
@@ -174,6 +178,7 @@ struct Friend: Codable, Identifiable {
         
         return Friend(
             id: id,
+            ownerId: ownerId,
             userId: userId,
             username: username,
             firstName: firstName,

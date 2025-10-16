@@ -143,27 +143,108 @@ class FriendsViewController: UIViewController {
     
     @objc private func clearAllRequestsTapped() {
         let alert = UIAlertController(
+            title: "Cleanup Options",
+            message: "Choose what to clear",
+            preferredStyle: .actionSheet
+        )
+        
+        alert.addAction(UIAlertAction(title: "Clear All Friend Requests", style: .destructive) { [weak self] _ in
+            self?.clearAllFriendRequests()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Clear All Friends", style: .destructive) { [weak self] _ in
+            self?.clearAllFriends()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Clear Friends for Specific User", style: .destructive) { [weak self] _ in
+            self?.clearFriendsForSpecificUser()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        present(alert, animated: true)
+    }
+    
+    private func clearAllFriendRequests() {
+        let confirmAlert = UIAlertController(
             title: "Clear All Friend Requests",
             message: "This will delete ALL friend requests in the database. Are you sure?",
             preferredStyle: .alert
         )
         
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Clear All", style: .destructive) { [weak self] _ in
+        confirmAlert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        confirmAlert.addAction(UIAlertAction(title: "Clear All", style: .destructive) { [weak self] _ in
             self?.firebaseService?.clearAllFriendRequests { error in
                 DispatchQueue.main.async {
                     if let error = error {
                         self?.showAlert(title: "Error", message: error.localizedDescription)
                     } else {
                         self?.showAlert(title: "Success", message: "All friend requests cleared!")
-                        // Refresh the current view
                         self?.loadPendingRequests()
                     }
                 }
             }
         })
         
-        present(alert, animated: true)
+        present(confirmAlert, animated: true)
+    }
+    
+    private func clearAllFriends() {
+        let confirmAlert = UIAlertController(
+            title: "Clear All Friends",
+            message: "This will delete ALL friend records in the database. Are you sure?",
+            preferredStyle: .alert
+        )
+        
+        confirmAlert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        confirmAlert.addAction(UIAlertAction(title: "Clear All", style: .destructive) { [weak self] _ in
+            self?.firebaseService?.clearAllFriends { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self?.showAlert(title: "Error", message: error.localizedDescription)
+                    } else {
+                        self?.showAlert(title: "Success", message: "All friend records cleared!")
+                        self?.friends.removeAll()
+                        self?.tableView.reloadData()
+                    }
+                }
+            }
+        })
+        
+        present(confirmAlert, animated: true)
+    }
+    
+    private func clearFriendsForSpecificUser() {
+        let inputAlert = UIAlertController(
+            title: "Clear Friends for User",
+            message: "Enter the username",
+            preferredStyle: .alert
+        )
+        
+        inputAlert.addTextField { textField in
+            textField.placeholder = "Username"
+        }
+        
+        inputAlert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        inputAlert.addAction(UIAlertAction(title: "Clear", style: .destructive) { [weak self] _ in
+            guard let username = inputAlert.textFields?.first?.text, !username.isEmpty else {
+                self?.showAlert(title: "Error", message: "Please enter a username")
+                return
+            }
+            
+            self?.firebaseService?.clearFriendsForUser(username: username) { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self?.showAlert(title: "Error", message: error.localizedDescription)
+                    } else {
+                        self?.showAlert(title: "Success", message: "All friend records cleared for \(username)!")
+                        self?.loadPendingRequests()
+                    }
+                }
+            }
+        })
+        
+        present(inputAlert, animated: true)
     }
     
     @objc private func segmentChanged() {
@@ -405,11 +486,17 @@ extension FriendsViewController: FriendCellDelegate {
 // MARK: - FriendRequestCellDelegate
 extension FriendsViewController: FriendRequestCellDelegate {
     func acceptRequestTapped(request: FriendRequest) {
+        print("🟢 FriendsVC: Accept button tapped for request \(request.id)")
+        print("   From: \(request.fromUsername), To: \(request.toUsername)")
+        
         firebaseService?.respondToFriendRequest(requestId: request.id, accept: true) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
-                    self?.showAlert(title: "Error", message: error.localizedDescription)
+                    print("❌ FriendsVC: Accept failed with error: \(error.localizedDescription)")
+                    self?.showAlert(title: "Error Accepting Request", message: error.localizedDescription)
                 } else {
+                    print("✅ FriendsVC: Accept succeeded!")
+                    self?.showAlert(title: "Success", message: "You are now friends with \(request.fromUsername)!")
                     self?.pendingRequests.removeAll { $0.id == request.id }
                     self?.updateRequestsBadge()
                     self?.tableView.reloadData()
@@ -420,11 +507,15 @@ extension FriendsViewController: FriendRequestCellDelegate {
     }
     
     func declineRequestTapped(request: FriendRequest) {
+        print("🔴 FriendsVC: Decline button tapped for request \(request.id)")
+        
         firebaseService?.respondToFriendRequest(requestId: request.id, accept: false) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
+                    print("❌ FriendsVC: Decline failed with error: \(error.localizedDescription)")
                     self?.showAlert(title: "Error", message: error.localizedDescription)
                 } else {
+                    print("✅ FriendsVC: Decline succeeded!")
                     self?.pendingRequests.removeAll { $0.id == request.id }
                     self?.updateRequestsBadge()
                     self?.tableView.reloadData()
