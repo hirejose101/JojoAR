@@ -429,6 +429,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var socialWallButton: UIButton!
     private var socialWallButtonBadge: UILabel!
     
+    // Character limit functionality
+    private var characterCounterLabel: UILabel!
+    private let maxTweetLength = 70
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -608,6 +612,25 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         textField.rightView = rightViewContainer
         textField.rightViewMode = .always
+        
+        // Add character counter label
+        characterCounterLabel = UILabel()
+        characterCounterLabel.font = UIFont.systemFont(ofSize: 12)
+        characterCounterLabel.textColor = UIColor.white
+        characterCounterLabel.textAlignment = .right
+        characterCounterLabel.text = "0/\(maxTweetLength)"
+        characterCounterLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(characterCounterLabel)
+        
+        // Position character counter below text field
+        NSLayoutConstraint.activate([
+            characterCounterLabel.topAnchor.constraint(equalTo: textField.bottomAnchor, constant: 4),
+            characterCounterLabel.trailingAnchor.constraint(equalTo: textField.trailingAnchor),
+            characterCounterLabel.heightAnchor.constraint(equalToConstant: 16)
+        ])
+        
+        // Add text field change observer for character counting
+        textField.addTarget(self, action: #selector(textFieldDidChange(_:)), for: .editingChanged)
         
         // Add tweet history button
         historyButton = UIButton(type: .system)
@@ -4770,6 +4793,35 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         enterButtonTapped()
         return true
+    }
+    
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        if textField == self.textField {
+            // Main tweet text field
+            let currentText = textField.text ?? ""
+            let newText = (currentText as NSString).replacingCharacters(in: range, with: string)
+            return newText.count <= maxTweetLength
+        }
+        return true
+    }
+    
+    @objc private func textFieldDidChange(_ textField: UITextField) {
+        if textField == self.textField {
+            // Update character counter for main tweet text field
+            let currentLength = textField.text?.count ?? 0
+            let remaining = maxTweetLength - currentLength
+            
+            characterCounterLabel.text = "\(currentLength)/\(maxTweetLength)"
+            
+            // Change color based on remaining characters
+            if remaining < 20 {
+                characterCounterLabel.textColor = UIColor.systemRed
+            } else if remaining < 40 {
+                characterCounterLabel.textColor = UIColor.systemOrange
+            } else {
+                characterCounterLabel.textColor = UIColor.white
+            }
+        }
     }
     
     // MARK: - ARSCNViewDelegate
