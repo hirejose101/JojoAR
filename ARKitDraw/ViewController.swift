@@ -2111,8 +2111,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             let userTweets = tweets.filter { $0.userId == userId }
             
             DispatchQueue.main.async {
-                // Store full tweet objects
-                self?.userTweets = userTweets
+                // Sort tweets by timestamp (newest first, oldest at bottom)
+                self?.userTweets = userTweets.sorted { $0.timestamp > $1.timestamp }
                 
                 // Update history button text and refresh the history table view
                 self?.updateHistoryButtonText()
