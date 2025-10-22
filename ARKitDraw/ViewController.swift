@@ -32,8 +32,61 @@ func makeStreetSignNode(
     textColor: UIColor = .white,
     boardColor: UIColor = .black,
     cornerRadiusMeters: CGFloat = 0.01,       // rounded board corners
-    billboard: Bool = true                   // always face camera
+    billboard: Bool = true,                  // always face camera
+    maxTextWidthMeters: CGFloat = 0.4        // maximum width before wrapping (40cm)
 ) -> SCNNode {
+    
+    // Helper function to add line breaks for text wrapping
+    func addLineBreaksToText(
+        text: String,
+        font: UIFont,
+        maxWidthMeters: CGFloat,
+        targetTextHeightMeters: CGFloat
+    ) -> String {
+        let words = text.components(separatedBy: " ")
+        
+        // For very short tweets (3 words or less), don't wrap at all
+        if words.count <= 3 {
+            return text
+        }
+        
+        var lines: [String] = []
+        var currentLine = ""
+        let minWordsPerLine = 5 // Minimum words before considering a line break
+        
+        for (index, word) in words.enumerated() {
+            let testLine = currentLine.isEmpty ? word : "\(currentLine) \(word)"
+            
+            // Estimate width using string size calculation
+            let fontScaleFactor: CGFloat = 220.0 / targetTextHeightMeters
+            let textSize = (testLine as NSString).size(withAttributes: [.font: font])
+            let estimatedWidthMeters = textSize.width / fontScaleFactor
+            
+            // Count words in current line
+            let currentWordCount = currentLine.components(separatedBy: " ").filter { !$0.isEmpty }.count
+            
+            // Only wrap if:
+            // 1. We exceed max width AND
+            // 2. We have at least minWordsPerLine words in current line OR
+            // 3. This is the last word AND we have at least 3 words on current line
+            if estimatedWidthMeters > maxWidthMeters && 
+               (currentWordCount >= minWordsPerLine || 
+                (index == words.count - 1 && currentWordCount >= 3)) && 
+               !currentLine.isEmpty {
+                lines.append(currentLine)
+                currentLine = word
+            } else {
+                currentLine = testLine
+            }
+        }
+        
+        if !currentLine.isEmpty {
+            lines.append(currentLine)
+        }
+        
+        // Return the text with \n characters for line breaks
+        return lines.joined(separator: "\n")
+    }
 
     // 1) Build the SCNText (no extrusion for a flat sign)
     let uiFont: UIFont = {
@@ -42,9 +95,18 @@ func makeStreetSignNode(
         }
         return UIFont.systemFont(ofSize: 220, weight: fallbackWeight)
     }()
+    
+    // Apply text wrapping with line breaks
+    let wrappedText = addLineBreaksToText(
+        text: text,
+        font: uiFont,
+        maxWidthMeters: maxTextWidthMeters,
+        targetTextHeightMeters: targetTextHeightMeters
+    )
 
-    let scnText = SCNText(string: text, extrusionDepth: 0.0)
+    let scnText = SCNText(string: wrappedText, extrusionDepth: 0.0)
     scnText.font = uiFont
+    
     scnText.flatness = 0.006  // smoother curves
     scnText.chamferRadius = 0 // not needed for flat
 
@@ -59,7 +121,7 @@ func makeStreetSignNode(
 
     // 2) Normalize size: scale the text so its *height* matches targetTextHeightMeters
     // Measure bounds (in its native size)
-    scnText.string = text // ensure layout
+    scnText.string = wrappedText // ensure layout with wrapped text
     let boundingBox = scnText.boundingBox
     let nativeWidth  = CGFloat(boundingBox.max.x - boundingBox.min.x)
     let nativeHeight = CGFloat(boundingBox.max.y - boundingBox.min.y)
@@ -288,11 +350,11 @@ class GTAText {
     }
 }
 
-class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITableViewDelegate, UITableViewDataSource, MiniMapSearchDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, UITextViewDelegate, UITableViewDelegate, UITableViewDataSource, MiniMapSearchDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
 
     @IBOutlet var sceneView: ARSCNView!
     @IBOutlet weak var button: UIButton!
-    @IBOutlet weak var textField: UITextField!
+    @IBOutlet weak var textField: UITextView!
     
     // Array to track all tweet nodes and their text
     private var tweetNodes: [SCNNode] = []
@@ -319,6 +381,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var pendingRequests: [FriendRequest] = []
     private var searchResults: [UserProfile] = []
     private var isFriendsVisible = false
+    
+    // Text field placeholder and buttons
+    private var placeholderLabel: UILabel!
+    private var imagePickerOverlayButton: UIButton!
+    private var colorPickerOverlayButton: UIButton!
     
     // Color picker elements
     private var colorPickerButton: UIButton!
@@ -433,6 +500,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var characterCounterLabel: UILabel!
     private let maxTweetLength = 70
     
+    // Text field expansion functionality
+    private var originalTextFieldHeight: CGFloat = 0
+    private var expandedTextFieldHeight: CGFloat = 100
+    private var isTextFieldExpanded = false
+    private var textFieldHeightConstraint: NSLayoutConstraint?
+    
+    // Multiline text view for wrapping
+    private var multilineTextView: UITextView?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -544,24 +620,33 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        // Configure text field
-        textField.placeholder = "What's your thought here?"
-        textField.borderStyle = .none
+        // Configure text view (for natural text wrapping)
         textField.backgroundColor = UIColor.white
         textField.textColor = UIColor.black
         textField.layer.cornerRadius = 12
         textField.layer.borderWidth = 1
         textField.layer.borderColor = UIColor.systemGray4.cgColor
         textField.font = getCustomFont(size: 16)
-        textField.attributedPlaceholder = NSAttributedString(
-            string: "What's your thought here?",
-            attributes: [NSAttributedString.Key.foregroundColor: UIColor.systemGray]
-        )
+        textField.textContainerInset = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 80) // Right padding for buttons
+        textField.textContainer.lineFragmentPadding = 0
+        textField.isScrollEnabled = false // Disable scrolling, allow wrapping
         
-        // Add padding to prevent text from touching borders
-        let paddingView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: textField.frame.height))
-        textField.leftView = paddingView
-        textField.leftViewMode = .always
+        // Add placeholder label (UITextView doesn't have built-in placeholder)
+        placeholderLabel = UILabel()
+        placeholderLabel.text = "What's your thought here?"
+        placeholderLabel.font = getCustomFont(size: 16)
+        placeholderLabel.textColor = UIColor.systemGray
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+        textField.addSubview(placeholderLabel)
+        
+        NSLayoutConstraint.activate([
+            placeholderLabel.topAnchor.constraint(equalTo: textField.topAnchor, constant: 8),
+            placeholderLabel.leadingAnchor.constraint(equalTo: textField.leadingAnchor, constant: 17),
+            placeholderLabel.trailingAnchor.constraint(equalTo: textField.trailingAnchor, constant: -80)
+        ])
+        
+        // Show/hide placeholder based on text
+        placeholderLabel.isHidden = !textField.text.isEmpty
         
         // Configure button
         button.setTitle("Enter", for: .normal)
@@ -577,41 +662,48 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Add button action
         button.addTarget(self, action: #selector(enterButtonTapped), for: .touchUpInside)
         
-        // Add color picker button (smaller size for text field)
-        colorPickerButton = UIButton(type: .system)
-        colorPickerButton.setTitle("🎨", for: .normal)
-        colorPickerButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
-        colorPickerButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
-        colorPickerButton.setTitleColor(UIColor.white, for: .normal)
-        colorPickerButton.layer.cornerRadius = 15
-        colorPickerButton.layer.masksToBounds = true
-        colorPickerButton.layer.borderWidth = 1
-        colorPickerButton.layer.borderColor = UIColor.white.cgColor
-        colorPickerButton.addTarget(self, action: #selector(colorPickerButtonTapped), for: .touchUpInside)
+        // Add image picker button as overlay (since UITextView doesn't have rightView)
+        imagePickerOverlayButton = UIButton(type: .system)
+        imagePickerOverlayButton.setImage(UIImage(systemName: "plus"), for: .normal)
+        imagePickerOverlayButton.tintColor = UIColor.white
+        imagePickerOverlayButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
+        imagePickerOverlayButton.layer.cornerRadius = 15
+        imagePickerOverlayButton.layer.masksToBounds = true
+        imagePickerOverlayButton.layer.borderWidth = 1
+        imagePickerOverlayButton.layer.borderColor = UIColor.white.cgColor
+        imagePickerOverlayButton.addTarget(self, action: #selector(imagePickerButtonTapped), for: .touchUpInside)
+        imagePickerOverlayButton.translatesAutoresizingMaskIntoConstraints = false
+        textField.addSubview(imagePickerOverlayButton)
         
-        // Create right view container with both image picker and color picker buttons
-        let rightViewContainer = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 40))
+        // Add color picker button as overlay
+        colorPickerOverlayButton = UIButton(type: .system)
+        colorPickerOverlayButton.setTitle("🎨", for: .normal)
+        colorPickerOverlayButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
+        colorPickerOverlayButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        colorPickerOverlayButton.setTitleColor(UIColor.white, for: .normal)
+        colorPickerOverlayButton.layer.cornerRadius = 15
+        colorPickerOverlayButton.layer.masksToBounds = true
+        colorPickerOverlayButton.layer.borderWidth = 1
+        colorPickerOverlayButton.layer.borderColor = UIColor.white.cgColor
+        colorPickerOverlayButton.addTarget(self, action: #selector(colorPickerButtonTapped), for: .touchUpInside)
+        colorPickerOverlayButton.translatesAutoresizingMaskIntoConstraints = false
+        textField.addSubview(colorPickerOverlayButton)
         
-        // Add image picker button
-        let imagePickerButton = UIButton(type: .system)
-        imagePickerButton.setImage(UIImage(systemName: "plus"), for: .normal)
-        imagePickerButton.tintColor = UIColor.white
-        imagePickerButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
-        imagePickerButton.layer.cornerRadius = 15
-        imagePickerButton.layer.masksToBounds = true
-        imagePickerButton.layer.borderWidth = 1
-        imagePickerButton.layer.borderColor = UIColor.white.cgColor
-        imagePickerButton.addTarget(self, action: #selector(imagePickerButtonTapped), for: .touchUpInside)
+        // Position overlay buttons in the top-right corner of text view
+        NSLayoutConstraint.activate([
+            imagePickerOverlayButton.topAnchor.constraint(equalTo: textField.topAnchor, constant: 5),
+            imagePickerOverlayButton.trailingAnchor.constraint(equalTo: textField.trailingAnchor, constant: -45),
+            imagePickerOverlayButton.widthAnchor.constraint(equalToConstant: 30),
+            imagePickerOverlayButton.heightAnchor.constraint(equalToConstant: 30),
+            
+            colorPickerOverlayButton.topAnchor.constraint(equalTo: textField.topAnchor, constant: 5),
+            colorPickerOverlayButton.trailingAnchor.constraint(equalTo: textField.trailingAnchor, constant: -10),
+            colorPickerOverlayButton.widthAnchor.constraint(equalToConstant: 30),
+            colorPickerOverlayButton.heightAnchor.constraint(equalToConstant: 30)
+        ])
         
-        rightViewContainer.addSubview(imagePickerButton)
-        rightViewContainer.addSubview(colorPickerButton)
-        
-        // Position buttons in right view container
-        imagePickerButton.frame = CGRect(x: 10, y: 5, width: 30, height: 30)
-        colorPickerButton.frame = CGRect(x: 50, y: 5, width: 30, height: 30)
-        
-        textField.rightView = rightViewContainer
-        textField.rightViewMode = .always
+        // Keep reference to color picker button for later use
+        colorPickerButton = colorPickerOverlayButton
         
         // Add character counter label
         characterCounterLabel = UILabel()
@@ -629,8 +721,16 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             characterCounterLabel.heightAnchor.constraint(equalToConstant: 16)
         ])
         
-        // Add text field change observer for character counting
-        textField.addTarget(self, action: #selector(textFieldDidChange(_:)), for: .editingChanged)
+        // Set up text view delegate
+        textField.delegate = self
+        
+        // Delay setup until after layout to get proper frame size
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            print("🔧 Setting up text field expansion...")
+            self.originalTextFieldHeight = self.textField.frame.size.height > 0 ? self.textField.frame.size.height : 44
+            print("🔧 Original height set to: \(self.originalTextFieldHeight)")
+            self.setupTextFieldExpansion()
+        }
         
         // Add tweet history button
         historyButton = UIButton(type: .system)
@@ -2418,7 +2518,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             textColor: color, // Colored text instead of white
             boardColor: .white, // White background instead of colored
             cornerRadiusMeters: 0.01,
-            billboard: true
+            billboard: true,
+            maxTextWidthMeters: 0.4  // 40cm max width for text wrapping
         )
         
         // Position the sign at the specified world position
@@ -2465,8 +2566,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             return
         }
         
-        // Original text tweet logic
-        guard let tweetText = textField.text, !tweetText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        // Get text from text view
+        let currentText = textField.text ?? ""
+        guard !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             print("🔘 No text entered, showing empty tweet alert")
             // Show alert if text is empty
             let alert = UIAlertController(title: "Empty Tweet", message: "Please enter some text for your tweet.", preferredStyle: .alert)
@@ -2476,16 +2578,19 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
         
         // Store the tweet text and wait for tap
-        pendingTweetText = tweetText
+        pendingTweetText = currentText
         isWaitingForTap = true
         
         // Update button to show we're waiting for tap
         button.setTitle("Tap to Place", for: .normal)
         button.backgroundColor = UIColor.systemOrange
         
-        // Clear text field and hide keyboard
+        // Clear text view and hide keyboard
         textField.text = ""
         textField.resignFirstResponder()
+        
+        // Collapse the text field after clearing
+        collapseTextField()
         
         // Show instruction to user
         let alert = UIAlertController(title: "Tap to Place", message: "Tap anywhere on the screen to place your tweet!", preferredStyle: .alert)
@@ -4789,26 +4894,162 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
     }
     
-    // MARK: - UITextFieldDelegate
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        enterButtonTapped()
-        return true
-    }
-    
-    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-        if textField == self.textField {
-            // Main tweet text field
-            let currentText = textField.text ?? ""
-            let newText = (currentText as NSString).replacingCharacters(in: range, with: string)
-            return newText.count <= maxTweetLength
+    // MARK: - Text Field Expansion
+    private func setupTextFieldExpansion() {
+        // First, try to find the main height constraint (should be 44pt from storyboard)
+        if let parentView = textField.superview {
+            for constraint in parentView.constraints {
+                if (constraint.firstItem as? UITextField == textField || constraint.secondItem as? UITextField == textField) &&
+                   constraint.firstAttribute == .height {
+                    print("🔍 Checking constraint: \(constraint.constant)pt")
+                    // Prefer constraints around 44pt (the intended height from storyboard)
+                    if constraint.constant >= 40 {  // Look for reasonable text field heights
+                        textFieldHeightConstraint = constraint
+                        originalTextFieldHeight = constraint.constant
+                        print("✅ Found main text field height constraint: \(constraint.constant)")
+                        break
+                    }
+                }
+            }
         }
-        return true
+        
+        // If not found in parent, check text field's own constraints
+        if textFieldHeightConstraint == nil {
+            for constraint in textField.constraints {
+                if constraint.firstAttribute == .height && constraint.constant >= 40 {
+                    textFieldHeightConstraint = constraint
+                    originalTextFieldHeight = constraint.constant
+                    print("✅ Found text field height constraint in self: \(constraint.constant)")
+                    break
+                }
+            }
+        }
+        
+        // If still no suitable constraint found, look for any height constraint as fallback
+        if textFieldHeightConstraint == nil {
+            if let parentView = textField.superview {
+                for constraint in parentView.constraints {
+                    if (constraint.firstItem as? UITextField == textField || constraint.secondItem as? UITextField == textField) &&
+                       constraint.firstAttribute == .height {
+                        textFieldHeightConstraint = constraint
+                        originalTextFieldHeight = constraint.constant
+                        print("✅ Using fallback constraint: \(constraint.constant)")
+                        break
+                    }
+                }
+            }
+        }
+        
+        // If still no height constraint found, create one
+        if textFieldHeightConstraint == nil {
+            textField.translatesAutoresizingMaskIntoConstraints = false
+            originalTextFieldHeight = 44  // Use the intended height from storyboard
+            textFieldHeightConstraint = textField.heightAnchor.constraint(equalToConstant: originalTextFieldHeight)
+            textFieldHeightConstraint?.isActive = true
+            print("✅ Created new text field height constraint: \(originalTextFieldHeight)")
+        }
+        
+        print("🔧 Final setup - Original height: \(originalTextFieldHeight), Constraint: \(textFieldHeightConstraint?.constant ?? 0)")
     }
     
-    @objc private func textFieldDidChange(_ textField: UITextField) {
-        if textField == self.textField {
-            // Update character counter for main tweet text field
-            let currentLength = textField.text?.count ?? 0
+    private func expandTextField() {
+        guard !isTextFieldExpanded else { 
+            print("⚠️ Text field already expanded, skipping")
+            return 
+        }
+        
+        print("🔼 Expanding text field from \(originalTextFieldHeight) to \(expandedTextFieldHeight)")
+        print("🔼 Text field frame before: \(textField.frame)")
+        
+        isTextFieldExpanded = true
+        
+        if let constraint = textFieldHeightConstraint {
+            constraint.constant = expandedTextFieldHeight
+            print("✅ Updated constraint constant to: \(constraint.constant)")
+        } else {
+            print("❌ No height constraint found!")
+            return
+        }
+        
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: [.curveEaseInOut], animations: {
+            self.view.layoutIfNeeded()
+        }, completion: { _ in
+            print("✅ Expand animation completed")
+            print("🔼 Text field frame after: \(self.textField.frame)")
+            // Text field expansion completed - keep it simple for now
+            print("🔼 Ready for input")
+        })
+    }
+    
+    private func collapseTextField() {
+        guard isTextFieldExpanded else { 
+            print("⚠️ Text field already collapsed, skipping")
+            return 
+        }
+        
+        print("🔽 Collapsing text field from \(expandedTextFieldHeight) to \(originalTextFieldHeight)")
+        isTextFieldExpanded = false
+        
+        if let constraint = textFieldHeightConstraint {
+            constraint.constant = originalTextFieldHeight
+            print("✅ Updated constraint constant to: \(constraint.constant)")
+        } else {
+            print("❌ No height constraint found!")
+        }
+        
+        // No need to sync or clean up - textField is already a UITextView
+        
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: [.curveEaseInOut], animations: {
+            self.view.layoutIfNeeded()
+        }, completion: { _ in
+            print("✅ Collapse animation completed")
+        })
+    }
+    
+    // No longer need these methods - textField is now always a UITextView with natural wrapping
+
+    // MARK: - UITextFieldDelegate (no longer needed, keeping for compatibility)
+    // All text input now handled by UITextView delegates
+    
+    // MARK: - UITextViewDelegate
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        if textView == textField {
+            print("📝 textViewDidBeginEditing called")
+            print("✅ This is our main text view, expanding...")
+            expandTextField()
+        }
+    }
+    
+    func textViewDidEndEditing(_ textView: UITextView) {
+        if textView == textField {
+            print("📝 textViewDidEndEditing called")
+            print("✅ This is our main text view, collapsing...")
+            collapseTextField()
+        }
+    }
+    
+    func textViewDidChange(_ textView: UITextView) {
+        if textView == textField {
+            // Update character counter for main text view
+            let currentLength = textView.text.count
+            let remaining = maxTweetLength - currentLength
+            
+            characterCounterLabel.text = "\(currentLength)/\(maxTweetLength)"
+            
+            // Change color based on remaining characters
+            if remaining < 20 {
+                characterCounterLabel.textColor = UIColor.systemRed
+            } else if remaining < 40 {
+                characterCounterLabel.textColor = UIColor.systemOrange
+            } else {
+                characterCounterLabel.textColor = UIColor.white
+            }
+            
+            // Show/hide placeholder
+            placeholderLabel.isHidden = !textView.text.isEmpty
+        } else if textView == multilineTextView {
+            // Update character counter for old multiline text view (if still exists)
+            let currentLength = textView.text.count
             let remaining = maxTweetLength - currentLength
             
             characterCounterLabel.text = "\(currentLength)/\(maxTweetLength)"
@@ -4822,6 +5063,33 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 characterCounterLabel.textColor = UIColor.white
             }
         }
+    }
+    
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        if textView == textField {
+            // Handle return key press - submit tweet instead of adding newline
+            if text == "\n" {
+                enterButtonTapped()
+                return false
+            }
+            
+            // Enforce character limit for main text view
+            let currentText = textView.text ?? ""
+            let newText = (currentText as NSString).replacingCharacters(in: range, with: text)
+            return newText.count <= maxTweetLength
+        } else if textView == multilineTextView {
+            // Handle return key press - submit tweet instead of adding newline
+            if text == "\n" {
+                enterButtonTapped()
+                return false
+            }
+            
+            // Enforce character limit for old multiline text view
+            let currentText = textView.text ?? ""
+            let newText = (currentText as NSString).replacingCharacters(in: range, with: text)
+            return newText.count <= maxTweetLength
+        }
+        return true
     }
     
     // MARK: - ARSCNViewDelegate
