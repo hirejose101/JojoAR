@@ -3937,19 +3937,83 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func showComments(for tweetId: String) {
+        guard let currentUserId = firebaseService.getCurrentUserId() else { return }
+        let tweetOwnerId = getTweetOwnerId(for: tweetId)
+        
         firebaseService.getComments(tweetId: tweetId) { [weak self] comments, error in
             if let error = error {
                 print("Error fetching comments: \(error)")
             } else {
                 DispatchQueue.main.async {
-                    self?.commentDisplayView?.configure(with: comments)
+                    self?.commentDisplayView?.configure(
+                        with: comments,
+                        tweetOwnerId: tweetOwnerId,
+                        currentUserId: currentUserId
+                    )
                     self?.commentDisplayView?.isHidden = false
+                    
+                    // Set up delete callback
+                    self?.commentDisplayView?.onDeleteComment = { [weak self] commentId in
+                        self?.deleteComment(commentId: commentId, tweetId: tweetId)
+                    }
                     
                     // Also show the input field so user can add new comments
                     self?.showCommentInput()
                 }
             }
         }
+    }
+    
+    func getTweetOwnerId(for tweetId: String) -> String {
+        // Check userTweets
+        if let tweet = userTweets.first(where: { $0.id == tweetId }) {
+            return tweet.userId
+        }
+        // Check social media posts
+        if let post = socialMediaPosts.first(where: { $0.id == tweetId }) {
+            return post.tweet.userId
+        }
+        // Check nearby tweets
+        if let tweet = nearbyTweets.first(where: { $0.id == tweetId }) {
+            return tweet.userId
+        }
+        return ""
+    }
+    
+    func deleteComment(commentId: String, tweetId: String) {
+        let alert = UIAlertController(
+            title: "Delete Comment",
+            message: "Are you sure you want to delete this comment?",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+            self?.firebaseService.deleteComment(tweetId: tweetId, commentId: commentId) { error in
+                if let error = error {
+                    print("Error deleting comment: \(error)")
+                    DispatchQueue.main.async {
+                        let errorAlert = UIAlertController(
+                            title: "Error",
+                            message: "Failed to delete comment. Please try again.",
+                            preferredStyle: .alert
+                        )
+                        errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self?.present(errorAlert, animated: true)
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        // Refresh comments
+                        self?.showComments(for: tweetId)
+                        // Refresh counts in social wall and history
+                        self?.loadSocialMediaFeed()
+                        self?.refreshUserTweets()
+                    }
+                }
+            }
+        })
+        
+        present(alert, animated: true)
     }
     
     func hideCommentDisplay() {

@@ -362,6 +362,38 @@ class FirebaseService {
         }
     }
     
+    func deleteComment(tweetId: String, commentId: String, completion: @escaping (Error?) -> Void) {
+        let tweetRef = db.collection(tweetsCollection).document(tweetId)
+        
+        db.runTransaction({ (transaction, errorPointer) -> Any? in
+            let tweetDocument: DocumentSnapshot
+            do {
+                try tweetDocument = transaction.getDocument(tweetRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let oldData = tweetDocument.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tweet not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            var comments = oldData["comments"] as? [[String: Any]] ?? []
+            
+            // Remove the comment with matching ID
+            comments.removeAll { commentData in
+                (commentData["id"] as? String) == commentId
+            }
+            
+            transaction.updateData(["comments": comments], forDocument: tweetRef)
+            return nil
+        }) { (_, error) in
+            completion(error)
+        }
+    }
+    
     private func commentFromData(_ data: [String: Any]) -> TweetComment? {
         guard let id = data["id"] as? String,
               let text = data["text"] as? String,

@@ -8,7 +8,11 @@ class CommentDisplayView: UIView {
     private let headerView = UIView()
     
     private var comments: [TweetComment] = []
+    private var tweetOwnerId: String?
+    private var currentUserId: String?
+    
     var onClose: (() -> Void)?
+    var onDeleteComment: ((String) -> Void)?
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -82,9 +86,23 @@ class CommentDisplayView: UIView {
         ])
     }
     
-    func configure(with comments: [TweetComment]) {
+    func configure(with comments: [TweetComment], tweetOwnerId: String, currentUserId: String) {
         self.comments = comments
+        self.tweetOwnerId = tweetOwnerId
+        self.currentUserId = currentUserId
         tableView.reloadData()
+    }
+    
+    private func canDeleteComment(_ comment: TweetComment) -> Bool {
+        guard let currentUserId = currentUserId else { return false }
+        // User can delete if they own the comment OR they own the tweet
+        return currentUserId == comment.userId || currentUserId == tweetOwnerId
+    }
+    
+    private func handleDeleteComment(at index: Int) {
+        guard index < comments.count else { return }
+        let comment = comments[index]
+        onDeleteComment?(comment.id)
     }
     
     @objc private func closeButtonTapped() {
@@ -100,7 +118,13 @@ extension CommentDisplayView: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "CommentCell", for: indexPath) as! CommentTableViewCell
         let comment = comments[indexPath.row]
-        cell.configure(with: comment)
+        let canDelete = canDeleteComment(comment)
+        
+        cell.configure(with: comment, canDelete: canDelete)
+        cell.onDelete = { [weak self] in
+            self?.handleDeleteComment(at: indexPath.row)
+        }
+        
         return cell
     }
     
@@ -116,6 +140,9 @@ class CommentTableViewCell: UITableViewCell {
     private let commentLabel = UILabel()
     private let timeLabel = UILabel()
     private let stackView = UIStackView()
+    private let deleteButton = UIButton(type: .system)
+    
+    var onDelete: (() -> Void)?
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -147,8 +174,16 @@ class CommentTableViewCell: UITableViewCell {
         timeLabel.font = UIFont.systemFont(ofSize: 12)
         timeLabel.textColor = .secondaryLabel
         
+        // Configure delete button
+        deleteButton.setImage(UIImage(systemName: "trash"), for: .normal)
+        deleteButton.tintColor = .systemRed
+        deleteButton.translatesAutoresizingMaskIntoConstraints = false
+        deleteButton.addTarget(self, action: #selector(deleteButtonTapped), for: .touchUpInside)
+        deleteButton.isHidden = true  // Hidden by default
+        
         // Add subviews
         contentView.addSubview(stackView)
+        contentView.addSubview(deleteButton)
         stackView.addArrangedSubview(usernameLabel)
         stackView.addArrangedSubview(commentLabel)
         stackView.addArrangedSubview(timeLabel)
@@ -157,17 +192,28 @@ class CommentTableViewCell: UITableViewCell {
         NSLayoutConstraint.activate([
             stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
             stackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            stackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+            stackView.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -8),
+            stackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            
+            deleteButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            deleteButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            deleteButton.widthAnchor.constraint(equalToConstant: 30),
+            deleteButton.heightAnchor.constraint(equalToConstant: 30)
         ])
     }
     
-    func configure(with comment: TweetComment) {
+    func configure(with comment: TweetComment, canDelete: Bool) {
         usernameLabel.text = comment.username
         commentLabel.text = comment.text
         
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         timeLabel.text = formatter.localizedString(for: comment.timestamp, relativeTo: Date())
+        
+        deleteButton.isHidden = !canDelete
+    }
+    
+    @objc private func deleteButtonTapped() {
+        onDelete?()
     }
 }
