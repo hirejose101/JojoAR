@@ -252,6 +252,7 @@ extension SocialMediaWallViewController: FriendsViewControllerDelegate {
 class SocialMediaPostCell: UITableViewCell {
     private let authorLabel = UILabel()
     private let contentLabel = UILabel()
+    private let tweetImageView = UIImageView()
     private let timestampLabel = UILabel()
     private let likeButton = UIButton(type: .system)
     private let commentButton = UIButton(type: .system)
@@ -285,6 +286,13 @@ class SocialMediaPostCell: UITableViewCell {
         contentLabel.numberOfLines = 0
         contentLabel.translatesAutoresizingMaskIntoConstraints = false
         
+        tweetImageView.contentMode = .scaleAspectFit
+        tweetImageView.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+        tweetImageView.layer.cornerRadius = 8
+        tweetImageView.layer.masksToBounds = true
+        tweetImageView.isHidden = true
+        tweetImageView.translatesAutoresizingMaskIntoConstraints = false
+        
         timestampLabel.font = UIFont.systemFont(ofSize: 12)
         timestampLabel.textColor = UIColor.gray
         timestampLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -300,6 +308,7 @@ class SocialMediaPostCell: UITableViewCell {
         contentView.addSubview(containerView)
         containerView.addSubview(authorLabel)
         containerView.addSubview(contentLabel)
+        containerView.addSubview(tweetImageView)
         containerView.addSubview(timestampLabel)
         containerView.addSubview(likeButton)
         containerView.addSubview(commentButton)
@@ -318,7 +327,13 @@ class SocialMediaPostCell: UITableViewCell {
             contentLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             contentLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
             
-            timestampLabel.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 8),
+            tweetImageView.topAnchor.constraint(equalTo: authorLabel.bottomAnchor, constant: 8),
+            tweetImageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
+            tweetImageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
+            tweetImageView.heightAnchor.constraint(equalToConstant: 200),
+            
+            timestampLabel.topAnchor.constraint(greaterThanOrEqualTo: contentLabel.bottomAnchor, constant: 8),
+            timestampLabel.topAnchor.constraint(greaterThanOrEqualTo: tweetImageView.bottomAnchor, constant: 8),
             timestampLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             timestampLabel.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -12),
             
@@ -332,10 +347,45 @@ class SocialMediaPostCell: UITableViewCell {
     
     func configure(with post: SocialMediaPost) {
         authorLabel.text = post.isFromFriend ? "\(post.authorFirstName) (@\(post.authorUsername))" : "You"
-        contentLabel.text = post.tweet.text
+        
+        if post.tweet.hasImage, let imageURL = post.tweet.imageURL {
+            // Show image tweet
+            contentLabel.isHidden = true
+            tweetImageView.isHidden = false
+            loadImageFromURL(imageURL)
+        } else {
+            // Show text tweet
+            contentLabel.text = post.tweet.text
+            contentLabel.isHidden = false
+            tweetImageView.isHidden = true
+        }
+        
         timestampLabel.text = formatTimestamp(post.tweet.timestamp)
         likeButton.setTitle("❤️ \(post.tweet.likeCount)", for: .normal)
         commentButton.setTitle("💬 \(post.tweet.commentCount)", for: .normal)
+    }
+    
+    private func loadImageFromURL(_ urlString: String) {
+        guard let url = URL(string: urlString) else {
+            print("Invalid image URL: \(urlString)")
+            return
+        }
+        
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            if let error = error {
+                print("Error loading image: \(error)")
+                return
+            }
+            
+            guard let data = data, let image = UIImage(data: data) else {
+                print("Failed to create image from data")
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self?.tweetImageView.image = image
+            }
+        }.resume()
     }
     
     private func formatTimestamp(_ date: Date) -> String {

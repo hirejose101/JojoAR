@@ -781,7 +781,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
         
         // Add segmented control for tabs - styled as a floating bubble
-        let segmentedControl = UISegmentedControl(items: ["My Tweets", "Social Wall"])
+        let segmentedControl = UISegmentedControl(items: ["Social Wall", "My Tweets"])
         segmentedControl.selectedSegmentIndex = 0
         segmentedControl.backgroundColor = UIColor.black.withAlphaComponent(0.9)
         segmentedControl.selectedSegmentTintColor = UIColor.neonGreen
@@ -4207,10 +4207,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             historyTableView.reloadData()
             socialWallTableView.reloadData()
             
-            // Reset to first tab
+            // Reset to first tab (Social Wall)
             tabSegmentedControl.selectedSegmentIndex = 0
-            historyTableView.isHidden = false
-            socialWallTableView.isHidden = true
+            historyTableView.isHidden = true
+            socialWallTableView.isHidden = false
             
             // Animate in
             historyContainerView.alpha = 0
@@ -4229,14 +4229,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     @objc func tabChanged(_ sender: UISegmentedControl) {
         if sender.selectedSegmentIndex == 0 {
-            // Show My Tweets
-            historyTableView.isHidden = false
-            socialWallTableView.isHidden = true
-        } else {
             // Show Social Wall
             historyTableView.isHidden = true
             socialWallTableView.isHidden = false
             socialWallTableView.reloadData()
+        } else {
+            // Show My Tweets
+            historyTableView.isHidden = false
+            socialWallTableView.isHidden = true
         }
     }
     
@@ -4614,14 +4614,54 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             authorLabel.translatesAutoresizingMaskIntoConstraints = false
             bubbleView.addSubview(authorLabel)
             
-            // Create content label
-            let contentLabel = UILabel()
-            contentLabel.text = post.tweet.text
-            contentLabel.textColor = UIColor.white
-            contentLabel.font = UIFont.systemFont(ofSize: 14)
-            contentLabel.numberOfLines = 0
-            contentLabel.translatesAutoresizingMaskIntoConstraints = false
-            bubbleView.addSubview(contentLabel)
+            // Create content container for either text or image
+            let contentContainer = UIView()
+            contentContainer.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(contentContainer)
+            
+            if post.tweet.hasImage, let imageURL = post.tweet.imageURL {
+                // Show image tweet
+                let imageView = UIImageView()
+                imageView.contentMode = .scaleAspectFit
+                imageView.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+                imageView.layer.cornerRadius = 8
+                imageView.layer.masksToBounds = true
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                contentContainer.addSubview(imageView)
+                
+                // Load image from URL
+                loadImageFromURL(imageURL) { image in
+                    DispatchQueue.main.async {
+                        imageView.image = image
+                    }
+                }
+                
+                // Image constraints
+                NSLayoutConstraint.activate([
+                    imageView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+                    imageView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+                    imageView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+                    imageView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+                    imageView.heightAnchor.constraint(equalToConstant: 200)
+                ])
+            } else {
+                // Show text tweet
+                let contentLabel = UILabel()
+                contentLabel.text = post.tweet.text
+                contentLabel.textColor = UIColor.white
+                contentLabel.font = UIFont.systemFont(ofSize: 14)
+                contentLabel.numberOfLines = 0
+                contentLabel.translatesAutoresizingMaskIntoConstraints = false
+                contentContainer.addSubview(contentLabel)
+                
+                // Text constraints
+                NSLayoutConstraint.activate([
+                    contentLabel.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+                    contentLabel.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+                    contentLabel.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+                    contentLabel.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+                ])
+            }
             
             // Create interactive like button
             let likeButton = UIButton(type: .system)
@@ -4654,11 +4694,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 authorLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
                 authorLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
                 
-                contentLabel.topAnchor.constraint(equalTo: authorLabel.bottomAnchor, constant: 6),
-                contentLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
-                contentLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
+                contentContainer.topAnchor.constraint(equalTo: authorLabel.bottomAnchor, constant: 6),
+                contentContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                contentContainer.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
                 
-                likeButton.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 6),
+                likeButton.topAnchor.constraint(equalTo: contentContainer.bottomAnchor, constant: 6),
                 likeButton.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
                 likeButton.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
                 
@@ -4694,14 +4734,54 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 bubbleView.translatesAutoresizingMaskIntoConstraints = false
                 cell.contentView.addSubview(bubbleView)
                 
-                // Create tweet text label
-                let tweetLabel = UILabel()
-                tweetLabel.text = tweet.text
-                tweetLabel.textColor = UIColor.white
-                tweetLabel.font = getCustomFont(size: 16)
-                tweetLabel.numberOfLines = 0
-                tweetLabel.translatesAutoresizingMaskIntoConstraints = false
-                bubbleView.addSubview(tweetLabel)
+                // Create content container for either text or image
+                let contentContainer = UIView()
+                contentContainer.translatesAutoresizingMaskIntoConstraints = false
+                bubbleView.addSubview(contentContainer)
+                
+                if tweet.hasImage, let imageURL = tweet.imageURL {
+                    // Show image tweet
+                    let imageView = UIImageView()
+                    imageView.contentMode = .scaleAspectFit
+                    imageView.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+                    imageView.layer.cornerRadius = 8
+                    imageView.layer.masksToBounds = true
+                    imageView.translatesAutoresizingMaskIntoConstraints = false
+                    contentContainer.addSubview(imageView)
+                    
+                    // Load image from URL
+                    loadImageFromURL(imageURL) { image in
+                        DispatchQueue.main.async {
+                            imageView.image = image
+                        }
+                    }
+                    
+                    // Image constraints
+                    NSLayoutConstraint.activate([
+                        imageView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+                        imageView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+                        imageView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+                        imageView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+                        imageView.heightAnchor.constraint(equalToConstant: 200)
+                    ])
+                } else {
+                    // Show text tweet
+                    let tweetLabel = UILabel()
+                    tweetLabel.text = tweet.text
+                    tweetLabel.textColor = UIColor.white
+                    tweetLabel.font = getCustomFont(size: 16)
+                    tweetLabel.numberOfLines = 0
+                    tweetLabel.translatesAutoresizingMaskIntoConstraints = false
+                    contentContainer.addSubview(tweetLabel)
+                    
+                    // Text constraints
+                    NSLayoutConstraint.activate([
+                        tweetLabel.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+                        tweetLabel.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+                        tweetLabel.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+                        tweetLabel.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+                    ])
+                }
                 
                 // Create interactive like button
                 let likeButton = UIButton(type: .system)
@@ -4739,11 +4819,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                     bubbleView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
                     bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -6),
                     
-                    tweetLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
-                    tweetLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
-                    tweetLabel.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -8),
+                    contentContainer.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
+                    contentContainer.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
+                    contentContainer.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor, constant: -8),
                     
-                    likeButton.topAnchor.constraint(equalTo: tweetLabel.bottomAnchor, constant: 6),
+                    likeButton.topAnchor.constraint(equalTo: contentContainer.bottomAnchor, constant: 6),
                     likeButton.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
                     likeButton.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
                     
