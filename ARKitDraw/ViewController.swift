@@ -732,33 +732,27 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self.setupTextFieldExpansion()
         }
         
-        // Add tweet history button
+        // Add Social Wall button (renamed from tweet history button)
         historyButton = UIButton(type: .system)
-        historyButton.setImage(UIImage(systemName: "person.fill"), for: .normal)
-        historyButton.tintColor = UIColor.white
-        historyButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.9)
-        historyButton.layer.cornerRadius = 25
-        historyButton.layer.masksToBounds = true
-        historyButton.layer.borderWidth = 2
-        historyButton.layer.borderColor = UIColor.neonGreen.withAlphaComponent(0.8).cgColor
-        historyButton.layer.shadowColor = UIColor.neonGreen.cgColor
+        historyButton.setTitle("Social Wall", for: .normal)
+        historyButton.setTitleColor(.white, for: .normal)
+        historyButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        historyButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.8)
+        historyButton.layer.cornerRadius = 12
+        historyButton.layer.shadowColor = UIColor.black.cgColor
         historyButton.layer.shadowOffset = CGSize(width: 0, height: 4)
-        historyButton.layer.shadowRadius = 8
         historyButton.layer.shadowOpacity = 0.6
+        historyButton.layer.shadowRadius = 8
         historyButton.translatesAutoresizingMaskIntoConstraints = false
         historyButton.addTarget(self, action: #selector(historyButtonTapped), for: .touchUpInside)
         
-        // Configure icon size and appearance
-        historyButton.imageView?.contentMode = .scaleAspectFit
-        historyButton.imageEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        
         view.addSubview(historyButton)
         
-        // Position history button aligned with text field
+        // Position Social Wall button on same line as See Tweets, to the left
         NSLayoutConstraint.activate([
-            historyButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 80),
-            historyButton.leadingAnchor.constraint(equalTo: textField.leadingAnchor),
-            historyButton.widthAnchor.constraint(equalToConstant: 50),
+            historyButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            historyButton.trailingAnchor.constraint(equalTo: view.centerXAnchor, constant: -80), // Position to left of center
+            historyButton.widthAnchor.constraint(equalToConstant: 150),
             historyButton.heightAnchor.constraint(equalToConstant: 50)
         ])
         
@@ -772,10 +766,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyContainerView.isHidden = true
         view.addSubview(historyContainerView)
         
-        // Position container centered on screen
+        // Position container in upper portion of screen to avoid map clash, shifted left for future buttons
         NSLayoutConstraint.activate([
-            historyContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            historyContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            historyContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -50),
+            historyContainerView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 100),
             historyContainerView.widthAnchor.constraint(equalToConstant: 300),
             historyContainerView.heightAnchor.constraint(equalToConstant: 450)
         ])
@@ -904,10 +898,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         friendsContainerView.isHidden = true
         view.addSubview(friendsContainerView)
         
-        // Position container centered on screen
+        // Position container in upper portion of screen to avoid map clash, shifted left for future buttons
         NSLayoutConstraint.activate([
-            friendsContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            friendsContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            friendsContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -50),
+            friendsContainerView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 100),
             friendsContainerView.widthAnchor.constraint(equalToConstant: 320),
             friendsContainerView.heightAnchor.constraint(equalToConstant: 500)
         ])
@@ -1111,11 +1105,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func setupSocialWallButton() {
         // Create Friends button (renamed from Social Wall)
         socialWallButton = UIButton(type: .system)
-        socialWallButton.setTitle("Friends", for: .normal)
+        socialWallButton.setImage(UIImage(systemName: "person.2.fill"), for: .normal)
+        socialWallButton.tintColor = .white
         socialWallButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.8)
-        socialWallButton.setTitleColor(.white, for: .normal)
-        socialWallButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        socialWallButton.layer.cornerRadius = 12
+        socialWallButton.layer.cornerRadius = 25  // Make it circular
         socialWallButton.layer.shadowColor = UIColor.black.cgColor
         socialWallButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         socialWallButton.layer.shadowOpacity = 0.6
@@ -1143,7 +1136,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         NSLayoutConstraint.activate([
             socialWallButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             socialWallButton.bottomAnchor.constraint(equalTo: seeTweetsButton.topAnchor, constant: -10),
-            socialWallButton.widthAnchor.constraint(equalToConstant: 120),
+            socialWallButton.widthAnchor.constraint(equalToConstant: 50),
             socialWallButton.heightAnchor.constraint(equalToConstant: 50),
             
             socialWallButtonBadge.topAnchor.constraint(equalTo: socialWallButton.topAnchor, constant: -5),
@@ -3079,13 +3072,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     private func updateHistoryButtonText() {
         guard let historyButton = historyButton else { return }
-        
-        if isUserAuthenticated {
-            let tweetCount = userTweets.count
-            historyButton.setTitle("History (\(tweetCount))", for: .normal)
-        } else {
-            historyButton.setTitle("History", for: .normal)
-        }
+        historyButton.setTitle("Social Wall", for: .normal)
     }
     
     private func refreshTweetHistoryDisplay() {
