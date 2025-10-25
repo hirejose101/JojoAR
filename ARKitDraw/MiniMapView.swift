@@ -304,19 +304,23 @@ extension MiniMapView: MKMapViewDelegate {
         
         // Add search button (initially visible for testing, will be hidden when map moves)
         searchButton = UIButton(type: .system)
-        searchButton?.setTitle("🔍 Search for posts in this area", for: .normal)
+        searchButton?.setTitle("Search for posts in this area", for: .normal)
         searchButton?.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
         searchButton?.setTitleColor(UIColor.white, for: .normal)
-        searchButton?.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.9)
+        searchButton?.backgroundColor = UIColor.black.withAlphaComponent(0.5) // Black background like Enter button
         searchButton?.layer.cornerRadius = 20
-        searchButton?.frame = CGRect(x: 20, y: 80, width: 250, height: 40) // Moved up and made wider
+        // Center the button horizontally and position it lower
+        let screenWidth = superview.bounds.width
+        let buttonWidth: CGFloat = 220
+        let centerX = (screenWidth - buttonWidth) / 2
+        searchButton?.frame = CGRect(x: centerX, y: 120, width: buttonWidth, height: 40) // Properly centered horizontally
         searchButton?.addTarget(self, action: #selector(searchButtonTapped), for: .touchUpInside)
         searchButton?.isHidden = false // Initially visible for testing
         searchButton?.layer.zPosition = 1000 // Ensure it's above the map
-        searchButton?.layer.shadowColor = UIColor.neonGreen.cgColor
-        searchButton?.layer.shadowOffset = CGSize(width: 0, height: 4)
-        searchButton?.layer.shadowRadius = 8
-        searchButton?.layer.shadowOpacity = 0.6
+        searchButton?.layer.shadowColor = UIColor.black.cgColor // Black shadow like Enter button
+        searchButton?.layer.shadowOffset = CGSize(width: 0, height: 2)
+        searchButton?.layer.shadowRadius = 4
+        searchButton?.layer.shadowOpacity = 0.3
         fullScreenContainer?.addSubview(searchButton!)
         
         // Add map movement tracking
@@ -338,7 +342,7 @@ extension MiniMapView: MKMapViewDelegate {
         searchInProgress = true
         
         // Show loading state
-        searchButton?.setTitle("🔍 Searching...", for: .normal)
+        searchButton?.setTitle("Searching...", for: .normal)
         searchButton?.isEnabled = false
         
         // Get the visible region
@@ -349,7 +353,7 @@ extension MiniMapView: MKMapViewDelegate {
         
         // Reset button after a delay (delegate will handle the actual search)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.searchButton?.setTitle("🔍 Search for posts in this area", for: .normal)
+            self?.searchButton?.setTitle("Search for posts in this area", for: .normal)
             self?.searchButton?.isEnabled = true
             self?.searchButton?.isUserInteractionEnabled = true
             self?.searchInProgress = false

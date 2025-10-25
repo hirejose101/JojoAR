@@ -653,13 +653,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Configure button
         button.setTitle("Enter", for: .normal)
-        button.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.75)
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
         button.setTitleColor(UIColor.white, for: .normal)
         button.layer.cornerRadius = 12
-        button.layer.shadowColor = UIColor.neonGreen.cgColor
-        button.layer.shadowOffset = CGSize(width: 0, height: 4)
-        button.layer.shadowRadius = 8
-        button.layer.shadowOpacity = 0.6
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOffset = CGSize(width: 0, height: 2)
+        button.layer.shadowRadius = 4
+        button.layer.shadowOpacity = 0.3
         button.titleLabel?.font = getCustomFont(size: 18)
         
         // Add button action
@@ -669,7 +669,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         imagePickerOverlayButton = UIButton(type: .system)
         imagePickerOverlayButton.setImage(UIImage(systemName: "plus"), for: .normal)
         imagePickerOverlayButton.tintColor = UIColor.white
-        imagePickerOverlayButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
+        imagePickerOverlayButton.backgroundColor = UIColor(red: 0.0, green: 0.75, blue: 0.39, alpha: 0.9) // Mini map tweet green
         imagePickerOverlayButton.layer.cornerRadius = 15
         imagePickerOverlayButton.layer.masksToBounds = true
         imagePickerOverlayButton.layer.borderWidth = 1
@@ -682,7 +682,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         colorPickerOverlayButton = UIButton(type: .system)
         colorPickerOverlayButton.setTitle("🎨", for: .normal)
         colorPickerOverlayButton.titleLabel?.font = UIFont.systemFont(ofSize: 16)
-        colorPickerOverlayButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.9)
+        colorPickerOverlayButton.backgroundColor = UIColor(red: 0.0, green: 0.75, blue: 0.39, alpha: 0.9) // Mini map tweet green
         colorPickerOverlayButton.setTitleColor(UIColor.white, for: .normal)
         colorPickerOverlayButton.layer.cornerRadius = 15
         colorPickerOverlayButton.layer.masksToBounds = true
@@ -2669,7 +2669,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             button.backgroundColor = UIColor.systemOrange
         } else {
             button.setTitle("Enter", for: .normal)
-            button.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.75)
+            button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
         }
     }
     
@@ -3285,7 +3285,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             // Reset button
             button.setTitle("Enter", for: .normal)
-            button.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.75)
+            button.backgroundColor = UIColor.black.withAlphaComponent(0.5)
             button.setTitleColor(UIColor.white, for: .normal)
             return
         }
