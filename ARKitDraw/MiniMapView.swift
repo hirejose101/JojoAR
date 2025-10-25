@@ -269,14 +269,14 @@ extension MiniMapView: MKMapViewDelegate {
         fullScreenMapView?.pointOfInterestFilter = .excludingAll
         fullScreenMapView?.delegate = self
         
-        // Add close button
+        // Add close button - smaller and in corner
         let closeButton = UIButton(type: .system)
         closeButton.setTitle("✕", for: .normal)
-        closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
         closeButton.setTitleColor(UIColor.white, for: .normal)
-        closeButton.backgroundColor = UIColor.red.withAlphaComponent(0.8)
-        closeButton.layer.cornerRadius = 20
-        closeButton.frame = CGRect(x: superview.bounds.width - 60, y: 120, width: 40, height: 40)
+        closeButton.backgroundColor = UIColor(red: 0.0, green: 0.75, blue: 0.39, alpha: 0.9) // Mini map tweet green
+        closeButton.layer.cornerRadius = 15
+        closeButton.frame = CGRect(x: superview.bounds.width - 45, y: 95, width: 30, height: 30)
         closeButton.addTarget(self, action: #selector(hideFullScreenMap), for: .touchUpInside)
         
         // Add to superview
@@ -306,8 +306,8 @@ extension MiniMapView: MKMapViewDelegate {
         searchButton = UIButton(type: .system)
         searchButton?.setTitle("Search for posts in this area", for: .normal)
         searchButton?.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        searchButton?.setTitleColor(UIColor.white, for: .normal)
-        searchButton?.backgroundColor = UIColor.black.withAlphaComponent(0.5) // Black background like Enter button
+        searchButton?.setTitleColor(UIColor.black, for: .normal)
+        searchButton?.backgroundColor = UIColor.white.withAlphaComponent(0.9) // White background with black text
         searchButton?.layer.cornerRadius = 20
         // Center the button horizontally and position it lower
         let screenWidth = superview.bounds.width
@@ -317,7 +317,7 @@ extension MiniMapView: MKMapViewDelegate {
         searchButton?.addTarget(self, action: #selector(searchButtonTapped), for: .touchUpInside)
         searchButton?.isHidden = false // Initially visible for testing
         searchButton?.layer.zPosition = 1000 // Ensure it's above the map
-        searchButton?.layer.shadowColor = UIColor.black.cgColor // Black shadow like Enter button
+        searchButton?.layer.shadowColor = UIColor.black.cgColor // Black shadow for contrast
         searchButton?.layer.shadowOffset = CGSize(width: 0, height: 2)
         searchButton?.layer.shadowRadius = 4
         searchButton?.layer.shadowOpacity = 0.3
