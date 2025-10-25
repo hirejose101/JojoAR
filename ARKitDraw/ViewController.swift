@@ -370,6 +370,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var socialMediaPosts: [SocialMediaPost] = []
     private var isHistoryVisible = false
     
+    // Unified bottom navigation bar
+    private var bottomNavContainer: UIView!
+    
     // UI elements for friends view
     private var friendsContainerView: UIView!
     private var friendsTableView: UITableView!
@@ -732,29 +735,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self.setupTextFieldExpansion()
         }
         
-        // Add Social Wall button (renamed from tweet history button)
-        historyButton = UIButton(type: .system)
-        historyButton.setTitle("Social Wall", for: .normal)
-        historyButton.setTitleColor(.white, for: .normal)
-        historyButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        historyButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.8)
-        historyButton.layer.cornerRadius = 12
-        historyButton.layer.shadowColor = UIColor.black.cgColor
-        historyButton.layer.shadowOffset = CGSize(width: 0, height: 4)
-        historyButton.layer.shadowOpacity = 0.6
-        historyButton.layer.shadowRadius = 8
-        historyButton.translatesAutoresizingMaskIntoConstraints = false
-        historyButton.addTarget(self, action: #selector(historyButtonTapped), for: .touchUpInside)
-        
-        view.addSubview(historyButton)
-        
-        // Position Social Wall button on same line as See Tweets, to the left
-        NSLayoutConstraint.activate([
-            historyButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
-            historyButton.trailingAnchor.constraint(equalTo: view.centerXAnchor, constant: -80), // Position to left of center
-            historyButton.widthAnchor.constraint(equalToConstant: 150),
-            historyButton.heightAnchor.constraint(equalToConstant: 50)
-        ])
         
 
         
@@ -845,8 +825,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup guidance UI
         setupGuidanceUI()
         
-        // Setup See Tweets button
-        setupSeeTweetsButton()
         
         // Setup Draw button
         setupDrawButton()
@@ -857,7 +835,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         // Setup Save Drawing button
         setupSaveDrawingButton()
         
-        // Setup Camera button
+        // Setup unified bottom navigation bar first (creates seeTweetsButton)
+        setupBottomNavigationBar()
+        
+        // Setup Camera button (needs seeTweetsButton to be created first)
         setupCameraButton()
         
         // Hide draw and reset buttons
@@ -869,9 +850,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Setup like and comment interaction views
         setupInteractionViews()
-        
-        // Setup Social Wall button
-        setupSocialWallButton()
     }
     
     func setupMiniMap() {
@@ -1075,49 +1053,46 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ])
     }
     
-    func setupSeeTweetsButton() {
-        // Create See Tweets button
+    
+    func setupBottomNavigationBar() {
+        // Create unified bottom navigation container
+        bottomNavContainer = UIView()
+        bottomNavContainer.backgroundColor = UIColor.black.withAlphaComponent(0.9)
+        bottomNavContainer.layer.cornerRadius = 25
+        bottomNavContainer.layer.shadowColor = UIColor.black.cgColor
+        bottomNavContainer.layer.shadowOffset = CGSize(width: 0, height: 4)
+        bottomNavContainer.layer.shadowOpacity = 0.6
+        bottomNavContainer.layer.shadowRadius = 8
+        bottomNavContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomNavContainer)
+        
+        // Create Social Wall button (house icon)
+        historyButton = UIButton(type: .system)
+        historyButton.setImage(UIImage(systemName: "house.fill"), for: .normal)
+        historyButton.tintColor = .white
+        historyButton.backgroundColor = UIColor.clear
+        historyButton.translatesAutoresizingMaskIntoConstraints = false
+        historyButton.addTarget(self, action: #selector(historyButtonTapped), for: .touchUpInside)
+        bottomNavContainer.addSubview(historyButton)
+        
+        // Create See Tweets button (text)
         seeTweetsButton = UIButton(type: .system)
         seeTweetsButton.setTitle("See Tweets", for: .normal)
-        seeTweetsButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
         seeTweetsButton.setTitleColor(.white, for: .normal)
-        seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
-        seeTweetsButton.layer.cornerRadius = 12
-        seeTweetsButton.layer.shadowColor = UIColor.black.cgColor
-        seeTweetsButton.layer.shadowOffset = CGSize(width: 0, height: 4)
-        seeTweetsButton.layer.shadowOpacity = 0.6
-        seeTweetsButton.layer.shadowRadius = 8
-        seeTweetsButton.isHidden = false // Always visible
-        seeTweetsButton.addTarget(self, action: #selector(seeTweetsButtonTapped), for: .touchUpInside)
+        seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        seeTweetsButton.backgroundColor = UIColor.clear
         seeTweetsButton.translatesAutoresizingMaskIntoConstraints = false
+        seeTweetsButton.addTarget(self, action: #selector(seeTweetsButtonTapped), for: .touchUpInside)
+        bottomNavContainer.addSubview(seeTweetsButton)
         
-        view.addSubview(seeTweetsButton)
-        
-        // Position in bottom center
-        NSLayoutConstraint.activate([
-            seeTweetsButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            seeTweetsButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
-            seeTweetsButton.widthAnchor.constraint(equalToConstant: 150),
-            seeTweetsButton.heightAnchor.constraint(equalToConstant: 50)
-        ])
-    }
-    
-    func setupSocialWallButton() {
-        // Create Friends button (renamed from Social Wall)
+        // Create Friends button (people icon)
         socialWallButton = UIButton(type: .system)
         socialWallButton.setImage(UIImage(systemName: "person.2.fill"), for: .normal)
         socialWallButton.tintColor = .white
-        socialWallButton.backgroundColor = UIColor.neonGreen.withAlphaComponent(0.8)
-        socialWallButton.layer.cornerRadius = 25  // Make it circular
-        socialWallButton.layer.shadowColor = UIColor.black.cgColor
-        socialWallButton.layer.shadowOffset = CGSize(width: 0, height: 4)
-        socialWallButton.layer.shadowOpacity = 0.6
-        socialWallButton.layer.shadowRadius = 8
-        socialWallButton.isHidden = false
-        socialWallButton.addTarget(self, action: #selector(socialWallButtonTapped), for: .touchUpInside)
+        socialWallButton.backgroundColor = UIColor.clear
         socialWallButton.translatesAutoresizingMaskIntoConstraints = false
-        
-        view.addSubview(socialWallButton)
+        socialWallButton.addTarget(self, action: #selector(socialWallButtonTapped), for: .touchUpInside)
+        bottomNavContainer.addSubview(socialWallButton)
         
         // Create badge for pending friend requests
         socialWallButtonBadge = UILabel()
@@ -1129,16 +1104,32 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         socialWallButtonBadge.layer.masksToBounds = true
         socialWallButtonBadge.isHidden = true
         socialWallButtonBadge.translatesAutoresizingMaskIntoConstraints = false
-        
         view.addSubview(socialWallButtonBadge)
         
-        // Position in bottom right
+        // Position the container at the bottom
         NSLayoutConstraint.activate([
-            socialWallButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            socialWallButton.bottomAnchor.constraint(equalTo: seeTweetsButton.topAnchor, constant: -10),
+            bottomNavContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bottomNavContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            bottomNavContainer.widthAnchor.constraint(equalToConstant: 320),
+            bottomNavContainer.heightAnchor.constraint(equalToConstant: 60),
+            
+            // Position buttons inside the container
+            historyButton.leadingAnchor.constraint(equalTo: bottomNavContainer.leadingAnchor, constant: 20),
+            historyButton.centerYAnchor.constraint(equalTo: bottomNavContainer.centerYAnchor),
+            historyButton.widthAnchor.constraint(equalToConstant: 50),
+            historyButton.heightAnchor.constraint(equalToConstant: 50),
+            
+            seeTweetsButton.centerXAnchor.constraint(equalTo: bottomNavContainer.centerXAnchor),
+            seeTweetsButton.centerYAnchor.constraint(equalTo: bottomNavContainer.centerYAnchor),
+            seeTweetsButton.widthAnchor.constraint(equalToConstant: 120),
+            seeTweetsButton.heightAnchor.constraint(equalToConstant: 50),
+            
+            socialWallButton.trailingAnchor.constraint(equalTo: bottomNavContainer.trailingAnchor, constant: -20),
+            socialWallButton.centerYAnchor.constraint(equalTo: bottomNavContainer.centerYAnchor),
             socialWallButton.widthAnchor.constraint(equalToConstant: 50),
             socialWallButton.heightAnchor.constraint(equalToConstant: 50),
             
+            // Position badge
             socialWallButtonBadge.topAnchor.constraint(equalTo: socialWallButton.topAnchor, constant: -5),
             socialWallButtonBadge.trailingAnchor.constraint(equalTo: socialWallButton.trailingAnchor, constant: 5),
             socialWallButtonBadge.widthAnchor.constraint(equalToConstant: 20),
