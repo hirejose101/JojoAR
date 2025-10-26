@@ -206,7 +206,32 @@ class SignInViewController: UIViewController {
                 self?.setLoadingState(false)
                 
                 if let error = error {
-                    self?.showError(error.localizedDescription)
+                    var errorMessage = "An error occurred. Please try again."
+                    
+                    // Convert error to NSError to get error code
+                    let nsError = error as NSError
+                    let errorCode = nsError.code
+                    
+                    switch errorCode {
+                    case 17004: // FIRAuthErrorCodeInvalidCredential - "malformed or expired"
+                        errorMessage = "Password is incorrect"
+                    case 17009: // FIRAuthErrorCodeWrongPassword
+                        errorMessage = "Password is incorrect"
+                    case 17011: // FIRAuthErrorCodeUserNotFound
+                        errorMessage = "No account found with this email address"
+                    case 17008: // FIRAuthErrorCodeInvalidEmail
+                        errorMessage = "Please enter a valid email address"
+                    case 17020: // FIRAuthErrorCodeNetworkError
+                        errorMessage = "Network error. Please check your connection and try again"
+                    case 17010: // FIRAuthErrorCodeTooManyRequests
+                        errorMessage = "Too many failed attempts. Please try again later"
+                    case 17005: // FIRAuthErrorCodeUserDisabled
+                        errorMessage = "This account has been disabled"
+                    default:
+                        errorMessage = error.localizedDescription
+                    }
+                    
+                    self?.showError(errorMessage)
                 } else {
                     self?.showSuccess()
                 }
