@@ -365,6 +365,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     private var historyButton: UIButton!
     private var historyTableView: UITableView!
     private var historyContainerView: UIView!
+    private var historyCloseButton: UIButton!
     private var socialWallTableView: UITableView!
     private var tabSegmentedControl: UISegmentedControl!
     private var socialMediaPosts: [SocialMediaPost] = []
@@ -375,6 +376,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     
     // UI elements for friends view
     private var friendsContainerView: UIView!
+    private var friendsCloseButton: UIButton!
     private var friendsTableView: UITableView!
     private var requestsTableView: UITableView!
     private var searchTableView: UITableView!
@@ -811,6 +813,25 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             socialWallTableView.bottomAnchor.constraint(equalTo: historyContainerView.bottomAnchor)
         ])
         
+        // Add close button for history container
+        historyCloseButton = UIButton(type: .system)
+        historyCloseButton.setTitle("✕", for: .normal)
+        historyCloseButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+        historyCloseButton.setTitleColor(UIColor.white, for: .normal)
+        historyCloseButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        historyCloseButton.layer.cornerRadius = 15
+        historyCloseButton.translatesAutoresizingMaskIntoConstraints = false
+        historyCloseButton.addTarget(self, action: #selector(historyCloseButtonTapped), for: .touchUpInside)
+        historyContainerView.addSubview(historyCloseButton)
+        
+        // Position close button in top-right corner
+        NSLayoutConstraint.activate([
+            historyCloseButton.topAnchor.constraint(equalTo: historyContainerView.topAnchor, constant: 5),
+            historyCloseButton.trailingAnchor.constraint(equalTo: historyContainerView.trailingAnchor, constant: -5),
+            historyCloseButton.widthAnchor.constraint(equalToConstant: 30),
+            historyCloseButton.heightAnchor.constraint(equalToConstant: 30)
+        ])
+        
         // Store references
         self.historyContainerView = historyContainerView
         self.socialWallTableView = socialWallTableView
@@ -974,6 +995,25 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             searchTableView.leadingAnchor.constraint(equalTo: friendsContainerView.leadingAnchor),
             searchTableView.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor),
             searchTableView.bottomAnchor.constraint(equalTo: friendsContainerView.bottomAnchor)
+        ])
+        
+        // Add close button for friends container
+        friendsCloseButton = UIButton(type: .system)
+        friendsCloseButton.setTitle("✕", for: .normal)
+        friendsCloseButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+        friendsCloseButton.setTitleColor(UIColor.white, for: .normal)
+        friendsCloseButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        friendsCloseButton.layer.cornerRadius = 15
+        friendsCloseButton.translatesAutoresizingMaskIntoConstraints = false
+        friendsCloseButton.addTarget(self, action: #selector(friendsCloseButtonTapped), for: .touchUpInside)
+        friendsContainerView.addSubview(friendsCloseButton)
+        
+        // Position close button in top-right corner
+        NSLayoutConstraint.activate([
+            friendsCloseButton.topAnchor.constraint(equalTo: friendsContainerView.topAnchor, constant: 5),
+            friendsCloseButton.trailingAnchor.constraint(equalTo: friendsContainerView.trailingAnchor, constant: -5),
+            friendsCloseButton.widthAnchor.constraint(equalToConstant: 30),
+            friendsCloseButton.heightAnchor.constraint(equalToConstant: 30)
         ])
         
         // Store references
@@ -2042,6 +2082,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
             // Load social media feed for the new user
             loadSocialMediaFeed()
+            
+            // Update history button to show house icon
+            updateHistoryButtonAppearance()
         } else {
             // No authenticated user
             isUserAuthenticated = false
@@ -2054,8 +2097,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             // Clear social media posts
             socialMediaPosts.removeAll()
             
-            // Update history button text and refresh table view
-            updateHistoryButtonText()
+            // Update history button to show "Sign In" in green
+            updateHistoryButtonAppearance()
+            
+            // Refresh table view
             refreshTweetHistoryDisplay()
         }
     }
@@ -2098,8 +2143,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 // Sort tweets by timestamp (newest first, oldest at bottom)
                 self?.userTweets = userTweets.sorted { $0.timestamp > $1.timestamp }
                 
-                // Update history button text and refresh the history table view
-                self?.updateHistoryButtonText()
+                // Only update history button text if signed in
+                if self?.isUserAuthenticated == true {
+                    self?.updateHistoryButtonText()
+                }
                 self?.refreshTweetHistoryDisplay()
                 
                 print("Loaded \(userTweets.count) tweets for user \(userId)")
@@ -3066,9 +3113,37 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         historyButton.setTitle("Social Wall", for: .normal)
     }
     
+    func updateHistoryButtonAppearance() {
+        guard let historyButton = historyButton, let firebaseService = firebaseService else { return }
+        
+        if firebaseService.isUserSignedIn() {
+            // User is signed in - show house icon
+            historyButton.setImage(UIImage(systemName: "house.fill"), for: .normal)
+            historyButton.setTitle(nil, for: .normal)
+            historyButton.tintColor = .white
+            // Set width back to 50 for icon
+            historyButton.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        } else {
+            // User is not signed in - show "Sign in" text in green
+            historyButton.setImage(nil, for: .normal)
+            historyButton.setTitle("Sign in", for: .normal)
+            historyButton.setTitleColor(UIColor(red: 0.0, green: 0.75, blue: 0.39, alpha: 1.0), for: .normal)
+            historyButton.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+            // Set width to 80 to fit "Sign in" text
+            if let widthConstraint = historyButton.constraints.first(where: { $0.firstAttribute == .width }) {
+                widthConstraint.constant = 80
+            } else {
+                historyButton.widthAnchor.constraint(equalToConstant: 80).isActive = true
+            }
+        }
+    }
+    
     private func refreshTweetHistoryDisplay() {
         DispatchQueue.main.async {
-            self.updateHistoryButtonText()
+            // Only update text if user is signed in
+            if self.isUserAuthenticated {
+                self.updateHistoryButtonText()
+            }
             if let historyTableView = self.historyTableView, !historyTableView.isHidden {
                 historyTableView.reloadData()
             }
@@ -4169,6 +4244,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     @objc func historyButtonTapped() {
+        // If user is not signed in, show sign in options
+        guard let firebaseService = firebaseService else { return }
+        
+        if !firebaseService.isUserSignedIn() {
+            showAuthenticationOptions()
+            return
+        }
+        
         // Close friends view if it's open
         if isFriendsVisible {
             isFriendsVisible = false
@@ -4202,6 +4285,26 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             } completion: { _ in
                 self.historyContainerView.isHidden = true
             }
+        }
+    }
+    
+    @objc func historyCloseButtonTapped() {
+        // Close history view
+        isHistoryVisible = false
+        UIView.animate(withDuration: 0.3) {
+            self.historyContainerView.alpha = 0
+        } completion: { _ in
+            self.historyContainerView.isHidden = true
+        }
+    }
+    
+    @objc func friendsCloseButtonTapped() {
+        // Close friends view
+        isFriendsVisible = false
+        UIView.animate(withDuration: 0.3) {
+            self.friendsContainerView.alpha = 0
+        } completion: { _ in
+            self.friendsContainerView.isHidden = true
         }
     }
     
@@ -4278,7 +4381,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 print("🗑️ After removal - userTweets.count: \(self?.userTweets.count ?? 0)")
                 
                 // Update UI
-                self?.updateHistoryButtonText()
+                if self?.isUserAuthenticated == true {
+                    self?.updateHistoryButtonText()
+                }
                 self?.historyTableView.reloadData()
                 print("✅ Delete completed and table reloaded")
             }
