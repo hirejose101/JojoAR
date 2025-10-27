@@ -124,7 +124,7 @@ class MiniMapView: UIView {
         for (index, tweet) in tweets.enumerated() {
             let annotation = MKPointAnnotation()
             annotation.coordinate = CLLocationCoordinate2D(latitude: tweet.latitude, longitude: tweet.longitude)
-            annotation.title = "Tweet" // Set title so viewFor can identify it
+            annotation.title = "Post" // Set title so viewFor can identify it
             mapView.addAnnotation(annotation)
             tweetAnnotations[tweet.id] = annotation
             
@@ -148,7 +148,7 @@ class MiniMapView: UIView {
             for tweet in tweets {
                 let annotation = MKPointAnnotation()
                 annotation.coordinate = CLLocationCoordinate2D(latitude: tweet.latitude, longitude: tweet.longitude)
-                annotation.title = "Tweet" // No tweet text - just circles
+                annotation.title = "Post" // No post text - just circles
                 fullScreenMap.addAnnotation(annotation)
                 print("🗺️ MiniMapView: Added annotation to full-screen map for tweet '\(tweet.text)'")
             }

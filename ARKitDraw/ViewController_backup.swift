@@ -710,7 +710,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func setupSeeTweetsButton() {
         // Create See Tweets button
         seeTweetsButton = UIButton(type: .system)
-        seeTweetsButton.setTitle("See Tweets", for: .normal)
+        seeTweetsButton.setTitle("See Posts", for: .normal)
         seeTweetsButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.75)
         seeTweetsButton.setTitleColor(.white, for: .normal)
         seeTweetsButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
@@ -931,7 +931,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     }
     
     func showTweetsDiscoveredNotification(count: Int) {
-        let message = count == 1 ? "New tweet detected, Click 'See Tweets' button to view it" : "New tweets detected, Click 'See Tweets' button to view them"
+        let message = count == 1 ? "New post detected, Click 'See Posts' button to view it" : "New posts detected, Click 'See Posts' button to view them"
         guidanceLabel.text = message
         guidanceLabel.textColor = .white
         guidanceLabel.isHidden = false
@@ -1180,7 +1180,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         switch frame.camera.trackingState {
         case .normal:
             // Tracking is good, tweets should appear
-            guidanceLabel.text = "✨ Nearby tweet detected!"
+            guidanceLabel.text = "✨ Nearby post detected!"
             guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
             
@@ -1191,7 +1191,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             
         case .limited(let reason):
             // Tracking is poor, ask user to hold steady
-            guidanceLabel.text = "📱 Hold phone steady to view nearby tweet"
+            guidanceLabel.text = "📱 Hold phone steady to view nearby post"
             guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
             
@@ -1726,7 +1726,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     @objc func enterButtonTapped() {
         guard let tweetText = textField.text, !tweetText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Show alert if text is empty
-            let alert = UIAlertController(title: "Empty Tweet", message: "Please enter some text for your tweet.", preferredStyle: .alert)
+            let alert = UIAlertController(title: "Empty Post", message: "Please enter some text for your post.", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             present(alert, animated: true)
             return
@@ -1745,7 +1745,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         textField.resignFirstResponder()
         
         // Show instruction to user
-        let alert = UIAlertController(title: "Tap to Place", message: "Tap anywhere on the screen to place your tweet!", preferredStyle: .alert)
+        let alert = UIAlertController(title: "Tap to Place", message: "Tap anywhere on the screen to place your post!", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
     }
