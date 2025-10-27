@@ -1874,6 +1874,11 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         if tweetsToRender.isEmpty {
             print("ℹ️ All nearby tweets are already rendered. No new tweets to show.")
+            
+            // Show message to user when there are no posts in the area
+            DispatchQueue.main.async {
+                self.showNoPostsMessage()
+            }
             return
         }
         
@@ -2028,6 +2033,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             guidanceLabel.text = "❌ Move to a brighter area with more features"
             guidanceLabel.textColor = .white
             guidanceLabel.isHidden = false
+        }
+    }
+    
+    func showNoPostsMessage() {
+        // Show the message using the guidance label
+        guidanceLabel.text = "💭 Nothing in your area yet. Be the first to leave a thought"
+        guidanceLabel.textColor = .white
+        guidanceLabel.isHidden = false
+        
+        // Hide after 5 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            self.guidanceLabel.isHidden = true
         }
     }
     
@@ -2347,7 +2364,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         ]
         
         let colorNames = [
-            "Black", "White", "Red", "Orange", "Yellow", "Neon Green", "Blue", "Purple",
+            "Black", "White", "Red", "Orange", "Yellow", "Green", "Blue", "Purple",
             "Pink", "Teal", "Indigo", "Brown"
         ]
         
