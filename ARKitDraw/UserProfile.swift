@@ -16,9 +16,10 @@ struct UserProfile: Codable {
     let email: String
     let createdAt: Date
     let lastLoginAt: Date
+    let howDidYouHearAboutUs: String?  // NEW: Add how did you hear about us field
     var friendStatus: FriendStatus = .none
     
-    init(id: String, firstName: String, username: String, dateOfBirth: Date, email: String) {
+    init(id: String, firstName: String, username: String, dateOfBirth: Date, email: String, howDidYouHearAboutUs: String? = nil) {
         self.id = id
         self.firstName = firstName
         self.username = username
@@ -26,11 +27,12 @@ struct UserProfile: Codable {
         self.email = email
         self.createdAt = Date()
         self.lastLoginAt = Date()
+        self.howDidYouHearAboutUs = howDidYouHearAboutUs
     }
     
     // Convert to Firestore dictionary
     func toDictionary() -> [String: Any] {
-        return [
+        var dict: [String: Any] = [
             "id": id,
             "firstName": firstName,
             "username": username,
@@ -39,6 +41,13 @@ struct UserProfile: Codable {
             "createdAt": Timestamp(date: createdAt),
             "lastLoginAt": Timestamp(date: lastLoginAt)
         ]
+        
+        // Add howDidYouHearAboutUs if exists
+        if let howDidYouHearAboutUs = howDidYouHearAboutUs {
+            dict["howDidYouHearAboutUs"] = howDidYouHearAboutUs
+        }
+        
+        return dict
     }
     
     // Create from Firestore document
@@ -54,12 +63,16 @@ struct UserProfile: Codable {
             return nil
         }
         
+        // Get howDidYouHearAboutUs if exists
+        let howDidYouHearAboutUs = data["howDidYouHearAboutUs"] as? String
+        
         return UserProfile(
             id: id,
             firstName: firstName,
             username: username,
             dateOfBirth: dateOfBirth.dateValue(),
-            email: email
+            email: email,
+            howDidYouHearAboutUs: howDidYouHearAboutUs
         )
     }
 }

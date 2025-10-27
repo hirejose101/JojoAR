@@ -58,34 +58,53 @@ class FirebaseService {
     
     // MARK: - User Registration & Authentication
     
-    func createUserAccount(email: String, password: String, firstName: String, username: String, dateOfBirth: Date, completion: @escaping (Bool, Error?) -> Void) {
-        Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
+    func createUserAccount(email: String, password: String, firstName: String, username: String, dateOfBirth: Date, howDidYouHearAboutUs: String? = nil, completion: @escaping (Bool, Error?) -> Void) {
+        // First, check if username is available (case-insensitive)
+        checkUsernameAvailability(username) { [weak self] isAvailable, error in
             if let error = error {
                 completion(false, error)
                 return
             }
             
-            guard let user = result?.user else {
-                completion(false, NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create user"]))
+            if !isAvailable {
+                completion(false, NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "This username is already taken. Please choose another."]))
                 return
             }
             
-            // Create user profile in Firestore
-            let userData: [String: Any] = [
-                "id": user.uid,
-                "firstName": firstName,
-                "username": username,
-                "dateOfBirth": Timestamp(date: dateOfBirth),
-                "email": email,
-                "createdAt": Timestamp(date: Date()),
-                "lastLoginAt": Timestamp(date: Date())
-            ]
-            
-            self?.db.collection(self?.usersCollection ?? "users").document(user.uid).setData(userData) { error in
+            // Username is available, proceed with account creation
+            Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
                 if let error = error {
                     completion(false, error)
-                } else {
-                    completion(true, nil)
+                    return
+                }
+                
+                guard let user = result?.user else {
+                    completion(false, NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create user"]))
+                    return
+                }
+                
+                // Create user profile in Firestore with lowercase username
+                var userData: [String: Any] = [
+                    "id": user.uid,
+                    "firstName": firstName,
+                    "username": username.lowercased(),  // Store as lowercase for consistency
+                    "dateOfBirth": Timestamp(date: dateOfBirth),
+                    "email": email,
+                    "createdAt": Timestamp(date: Date()),
+                    "lastLoginAt": Timestamp(date: Date())
+                ]
+                
+                // Add howDidYouHearAboutUs if provided
+                if let howDidYouHearAboutUs = howDidYouHearAboutUs, !howDidYouHearAboutUs.isEmpty {
+                    userData["howDidYouHearAboutUs"] = howDidYouHearAboutUs
+                }
+                
+                self?.db.collection(self?.usersCollection ?? "users").document(user.uid).setData(userData) { error in
+                    if let error = error {
+                        completion(false, error)
+                    } else {
+                        completion(true, nil)
+                    }
                 }
             }
         }
@@ -662,6 +681,22 @@ class FirebaseService {
                 
                 let userProfile = UserProfile.fromDocument(firstDoc)
                 completion(userProfile, nil)
+            }
+    }
+    
+    func checkUsernameAvailability(_ username: String, completion: @escaping (Bool, Error?) -> Void) {
+        db.collection(usersCollection)
+            .whereField("username", isEqualTo: username.lowercased())
+            .limit(to: 1)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    completion(false, error)
+                    return
+                }
+                
+                // If documents exist, username is taken
+                let isAvailable = snapshot?.documents.isEmpty ?? true
+                completion(isAvailable, nil)
             }
     }
     

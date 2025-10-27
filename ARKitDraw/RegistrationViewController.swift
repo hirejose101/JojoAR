@@ -51,6 +51,17 @@ class RegistrationViewController: UIViewController {
         return textField
     }()
     
+    private let howDidYouHearTextField: UITextField = {
+        let textField = UITextField()
+        textField.placeholder = "How did you hear about Meden?"
+        textField.borderStyle = .roundedRect
+        textField.font = UIFont.systemFont(ofSize: 16)
+        textField.autocapitalizationType = .words
+        textField.autocorrectionType = .no
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        return textField
+    }()
+    
     private let dateOfBirthTextField: UITextField = {
         let textField = UITextField()
         textField.placeholder = "Date of Birth"
@@ -120,9 +131,26 @@ class RegistrationViewController: UIViewController {
         return indicator
     }()
     
+    private let usernameStatusLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFont.systemFont(ofSize: 12)
+        label.textAlignment = .left
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let usernameCheckIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(activityIndicatorStyle: .large)
+        indicator.hidesWhenStopped = true
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        return indicator
+    }()
+    
     // MARK: - Properties
     private let datePicker = UIDatePicker()
     private let firebaseService = FirebaseService()
+    private var usernameCheckTimer: Timer?
+    private var isUsernameAvailable: Bool = false
     
     // MARK: - Lifecycle
     override func viewDidLoad() {
@@ -148,6 +176,9 @@ class RegistrationViewController: UIViewController {
         contentView.addSubview(subtitleLabel)
         contentView.addSubview(firstNameTextField)
         contentView.addSubview(usernameTextField)
+        contentView.addSubview(usernameStatusLabel)
+        contentView.addSubview(usernameCheckIndicator)
+        contentView.addSubview(howDidYouHearTextField)
         contentView.addSubview(dateOfBirthTextField)
         contentView.addSubview(emailTextField)
         contentView.addSubview(passwordTextField)
@@ -159,10 +190,14 @@ class RegistrationViewController: UIViewController {
         // Add text field delegates
         firstNameTextField.delegate = self
         usernameTextField.delegate = self
+        howDidYouHearTextField.delegate = self
         dateOfBirthTextField.delegate = self
         emailTextField.delegate = self
         passwordTextField.delegate = self
         confirmPasswordTextField.delegate = self
+        
+        // Add real-time username checking
+        usernameTextField.addTarget(self, action: #selector(usernameTextFieldChanged), for: .editingChanged)
     }
     
     private func setupConstraints() {
@@ -205,8 +240,22 @@ class RegistrationViewController: UIViewController {
             usernameTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
             usernameTextField.heightAnchor.constraint(equalToConstant: 50),
             
+            // Username status label
+            usernameStatusLabel.topAnchor.constraint(equalTo: usernameTextField.bottomAnchor, constant: 4),
+            usernameStatusLabel.leadingAnchor.constraint(equalTo: usernameTextField.leadingAnchor),
+            
+            // Username check indicator
+            usernameCheckIndicator.centerYAnchor.constraint(equalTo: usernameStatusLabel.centerYAnchor),
+            usernameCheckIndicator.leadingAnchor.constraint(equalTo: usernameStatusLabel.trailingAnchor, constant: 8),
+            
+            // How did you hear about Meden
+            howDidYouHearTextField.topAnchor.constraint(equalTo: usernameStatusLabel.bottomAnchor, constant: 12),
+            howDidYouHearTextField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            howDidYouHearTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            howDidYouHearTextField.heightAnchor.constraint(equalToConstant: 50),
+            
             // Date of Birth
-            dateOfBirthTextField.topAnchor.constraint(equalTo: usernameTextField.bottomAnchor, constant: 16),
+            dateOfBirthTextField.topAnchor.constraint(equalTo: howDidYouHearTextField.bottomAnchor, constant: 16),
             dateOfBirthTextField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             dateOfBirthTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
             dateOfBirthTextField.heightAnchor.constraint(equalToConstant: 50),
@@ -282,6 +331,7 @@ class RegistrationViewController: UIViewController {
         let username = usernameTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let email = emailTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let password = passwordTextField.text ?? ""
+        let howDidYouHear = howDidYouHearTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines)
         let dateOfBirth = datePicker.date
         
         // Show loading state
@@ -292,7 +342,8 @@ class RegistrationViewController: UIViewController {
             password: password,
             firstName: firstName,
             username: username,
-            dateOfBirth: dateOfBirth
+            dateOfBirth: dateOfBirth,
+            howDidYouHearAboutUs: howDidYouHear
         ) { [weak self] user, error in
             DispatchQueue.main.async {
                 self?.setLoadingState(false)
@@ -328,6 +379,58 @@ class RegistrationViewController: UIViewController {
         dateOfBirthTextField.resignFirstResponder()
     }
     
+    @objc private func usernameTextFieldChanged() {
+        // Cancel previous timer
+        usernameCheckTimer?.invalidate()
+        
+        let username = usernameTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        
+        // Reset status
+        usernameStatusLabel.text = ""
+        usernameCheckIndicator.stopAnimating()
+        isUsernameAvailable = false
+        
+        // Don't check if too short
+        if username.count < 3 {
+            return
+        }
+        
+        // Show loading
+        usernameCheckIndicator.startAnimating()
+        usernameStatusLabel.text = "Checking availability..."
+        usernameStatusLabel.textColor = .systemGray
+        
+        // Debounce: check after 0.5 seconds of no typing
+        usernameCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            self?.checkUsernameAvailability(username)
+        }
+    }
+    
+    private func checkUsernameAvailability(_ username: String) {
+        firebaseService.checkUsernameAvailability(username) { [weak self] isAvailable, error in
+            DispatchQueue.main.async {
+                self?.usernameCheckIndicator.stopAnimating()
+                
+                if let error = error {
+                    self?.usernameStatusLabel.text = "Error checking username"
+                    self?.usernameStatusLabel.textColor = .systemRed
+                    self?.isUsernameAvailable = false
+                    return
+                }
+                
+                if isAvailable {
+                    self?.usernameStatusLabel.text = "✓ Username available"
+                    self?.usernameStatusLabel.textColor = .systemGreen
+                    self?.isUsernameAvailable = true
+                } else {
+                    self?.usernameStatusLabel.text = "✗ Username already taken"
+                    self?.usernameStatusLabel.textColor = .systemRed
+                    self?.isUsernameAvailable = false
+                }
+            }
+        }
+    }
+    
     // MARK: - Helper Methods
     private func validateInputs() -> Bool {
         let firstName = firstNameTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -349,6 +452,11 @@ class RegistrationViewController: UIViewController {
         
         if username.count < 3 {
             showError("Username must be at least 3 characters long")
+            return false
+        }
+        
+        if !isUsernameAvailable {
+            showError("Username is already taken. Please choose another.")
             return false
         }
         
@@ -429,6 +537,8 @@ extension RegistrationViewController: UITextFieldDelegate {
         case firstNameTextField:
             usernameTextField.becomeFirstResponder()
         case usernameTextField:
+            howDidYouHearTextField.becomeFirstResponder()
+        case howDidYouHearTextField:
             dateOfBirthTextField.becomeFirstResponder()
         case dateOfBirthTextField:
             emailTextField.becomeFirstResponder()
