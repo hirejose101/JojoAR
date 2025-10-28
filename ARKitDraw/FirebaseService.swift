@@ -162,6 +162,102 @@ class FirebaseService {
         }
     }
     
+    func deleteUserAccount(completion: @escaping (Error?) -> Void) {
+        guard let currentUser = Auth.auth().currentUser,
+              let userId = currentUser.uid as String? else {
+            completion(NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No user logged in"]))
+            return
+        }
+        
+        // 1. Delete all user's tweets
+        db.collection(tweetsCollection).whereField("userId", isEqualTo: userId).getDocuments { [weak self] (snapshot, error) in
+            if let error = error {
+                print("Error fetching user tweets for deletion: \(error)")
+            } else if let snapshot = snapshot {
+                let batch = self?.db.batch()
+                for document in snapshot.documents {
+                    batch?.deleteDocument(document.reference)
+                }
+                batch?.commit { error in
+                    print("User tweets deleted: \(error?.localizedDescription ?? "success")")
+                }
+            }
+        }
+        
+        // 2. Delete all friend connections where this user is involved
+        db.collection("friends").whereField("ownerId", isEqualTo: userId).getDocuments { [weak self] (snapshot, error) in
+            if let error = error {
+                print("Error fetching friends for deletion: \(error)")
+            } else if let snapshot = snapshot {
+                let batch = self?.db.batch()
+                for document in snapshot.documents {
+                    batch?.deleteDocument(document.reference)
+                }
+                batch?.commit { error in
+                    print("User friends deleted: \(error?.localizedDescription ?? "success")")
+                }
+            }
+        }
+        
+        // 3. Delete friend connections where others have this user as a friend
+        db.collection("friends").whereField("userId", isEqualTo: userId).getDocuments { [weak self] (snapshot, error) in
+            if let error = error {
+                print("Error fetching friend records: \(error)")
+            } else if let snapshot = snapshot {
+                let batch = self?.db.batch()
+                for document in snapshot.documents {
+                    batch?.deleteDocument(document.reference)
+                }
+                batch?.commit { error in
+                    print("Friend records deleted: \(error?.localizedDescription ?? "success")")
+                }
+            }
+        }
+        
+        // 4. Delete pending friend requests
+        db.collection("friendRequests").whereField("fromUserId", isEqualTo: userId).getDocuments { [weak self] (snapshot, error) in
+            if let error = error {
+                print("Error fetching sent requests: \(error)")
+            } else if let snapshot = snapshot {
+                let batch = self?.db.batch()
+                for document in snapshot.documents {
+                    batch?.deleteDocument(document.reference)
+                }
+                batch?.commit { error in
+                    print("Sent friend requests deleted: \(error?.localizedDescription ?? "success")")
+                }
+            }
+        }
+        
+        db.collection("friendRequests").whereField("toUserId", isEqualTo: userId).getDocuments { [weak self] (snapshot, error) in
+            if let error = error {
+                print("Error fetching received requests: \(error)")
+            } else if let snapshot = snapshot {
+                let batch = self?.db.batch()
+                for document in snapshot.documents {
+                    batch?.deleteDocument(document.reference)
+                }
+                batch?.commit { error in
+                    print("Received friend requests deleted: \(error?.localizedDescription ?? "success")")
+                }
+            }
+        }
+        
+        // 5. Delete user's Firestore profile
+        db.collection(usersCollection).document(userId).delete { error in
+            if let error = error {
+                print("Error deleting user profile: \(error)")
+                completion(error)
+                return
+            }
+            
+            // 6. Delete Firebase Auth account
+            currentUser.delete { error in
+                completion(error)
+            }
+        }
+    }
+    
     func isUserSignedIn() -> Bool {
         return Auth.auth().currentUser != nil
     }

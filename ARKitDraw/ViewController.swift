@@ -569,6 +569,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             object: nil
         )
         
+        // Add notification observer for starting location updates after permissions granted
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(startLocationUpdates),
+            name: NSNotification.Name("StartLocationUpdates"),
+            object: nil
+        )
+        
         // Refresh all existing tweets with new iMessage design after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.refreshAllExistingTweets()
@@ -578,11 +586,16 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        // Create a session configuration
-        let configuration = ARWorldTrackingConfiguration()
+        // Check if this is first launch - don't start AR session until permissions granted
+        let hasShownPermissionScreen = UserDefaults.standard.bool(forKey: "HasShownPermissionScreen")
         
-        // Run the view's session
-        sceneView.session.run(configuration)
+        if hasShownPermissionScreen {
+            // Create a session configuration
+            let configuration = ARWorldTrackingConfiguration()
+            
+            // Run the view's session
+            sceneView.session.run(configuration)
+        }
         
         // Update authentication UI when returning from other screens
         // Only update if services are initialized
@@ -2182,8 +2195,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self?.onLocationUpdated(location)
         }
         
-        // Start location updates immediately (no anonymous auth needed)
-        locationManager.startLocationUpdates()
+        // Check if this is first launch - only start location updates if permissions screen has been shown
+        let hasShownPermissionScreen = UserDefaults.standard.bool(forKey: "HasShownPermissionScreen")
+        if hasShownPermissionScreen {
+            // Start location updates if permissions have been shown
+            locationManager.startLocationUpdates()
+        }
         
         // Update authentication UI
         updateAuthenticationUI()
@@ -2195,6 +2212,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Load nearby tweets when location changes
         loadNearbyTweets(location: location)
+    }
+    
+    @objc func startLocationUpdates() {
+        // Start location updates after permissions have been granted
+        locationManager?.startLocationUpdates()
+        
+        // Start AR session after permissions are granted
+        let configuration = ARWorldTrackingConfiguration()
+        sceneView.session.run(configuration)
     }
     
     func loadNearbyTweets(location: CLLocation) {
@@ -3058,6 +3084,45 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self?.signOutUser()
         })
         present(alert, animated: true)
+    }
+    
+    func showDeleteAccountConfirmation() {
+        let alert = UIAlertController(
+            title: "Delete Account",
+            message: "Are you sure you want to permanently delete your account? This action cannot be undone. All your data including tweets, comments, and friends will be permanently removed.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+            self?.deleteAccount()
+        })
+        present(alert, animated: true)
+    }
+    
+    func deleteAccount() {
+        guard let firebaseService = firebaseService else { return }
+        
+        // Show loading indicator
+        let loadingAlert = UIAlertController(title: "Deleting Account", message: "Please wait...", preferredStyle: .alert)
+        present(loadingAlert, animated: true)
+        
+        firebaseService.deleteUserAccount { [weak self] error in
+            DispatchQueue.main.async {
+                loadingAlert.dismiss(animated: true) {
+                    if let error = error {
+                        let errorAlert = UIAlertController(title: "Error", message: "Failed to delete account: \(error.localizedDescription)", preferredStyle: .alert)
+                        errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self?.present(errorAlert, animated: true)
+                    } else {
+                        // Account successfully deleted, sign out
+                        self?.signOutUser()
+                        let successAlert = UIAlertController(title: "Account Deleted", message: "Your account has been permanently deleted.", preferredStyle: .alert)
+                        successAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self?.present(successAlert, animated: true)
+                    }
+                }
+            }
+        }
     }
     
     @objc func authButtonTapped() {
@@ -4429,8 +4494,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // History table view
         if isUserAuthenticated {
-            // Show tweets + sign out button
-            return userTweets.count + 1
+            // Show tweets + sign out button + delete account button
+            return userTweets.count + 2
         } else {
             // Show sign-in button as first row when not authenticated
             return 1
@@ -4935,8 +5000,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                     deleteButton.widthAnchor.constraint(equalToConstant: 30),
                     deleteButton.heightAnchor.constraint(equalToConstant: 30)
                 ])
-            } else {
-                // Show sign-out button as last row
+            } else if indexPath.row == userTweets.count {
+                // Show sign-out button
                 // Remove any existing subviews first
                 cell.contentView.subviews.forEach { $0.removeFromSuperview() }
                 
@@ -4952,6 +5017,27 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 backgroundView.layer.cornerRadius = 8
                 backgroundView.layer.borderWidth = 1
                 backgroundView.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
+                cell.backgroundView = backgroundView
+                
+                // Center the text
+                cell.textLabel?.textAlignment = .center
+            } else {
+                // Show delete account button (last row)
+                // Remove any existing subviews first
+                cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                
+                cell.textLabel?.text = "Delete Account"
+                cell.textLabel?.textColor = UIColor.white
+                cell.textLabel?.font = getCustomFont(size: 16)
+                cell.backgroundColor = UIColor.clear
+                cell.selectionStyle = .default
+                
+                // Style the cell background for delete account button
+                let backgroundView = UIView()
+                backgroundView.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+                backgroundView.layer.cornerRadius = 8
+                backgroundView.layer.borderWidth = 1
+                backgroundView.layer.borderColor = UIColor.systemGray.withAlphaComponent(0.5).cgColor
                 cell.backgroundView = backgroundView
                 
                 // Center the text
@@ -5123,6 +5209,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             if indexPath.row == userTweets.count {
                 // Sign-out button tapped
                 showSignOutConfirmation()
+            } else if indexPath.row == userTweets.count + 1 {
+                // Delete account button tapped
+                showDeleteAccountConfirmation()
             }
         } else {
             // Show authentication options when sign-in button is tapped

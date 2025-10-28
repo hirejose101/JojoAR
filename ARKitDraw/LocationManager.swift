@@ -55,7 +55,8 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         case .denied, .restricted:
             print("Location access denied")
         case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
+            // Don't automatically request - wait for explicit startLocationUpdates() call
+            print("Location authorization not determined yet")
         @unknown default:
             break
         }

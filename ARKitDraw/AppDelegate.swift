@@ -19,10 +19,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Configure Firebase
         FirebaseApp.configure()
         
+        // Check if this is the first launch and show permission screen BEFORE ViewController loads
+        let hasShownPermissionScreen = UserDefaults.standard.bool(forKey: "HasShownPermissionScreen")
+        
+        if !hasShownPermissionScreen {
+            // Show permission screen immediately after a brief delay to let window setup
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.showPermissionScreen()
+            }
+        }
+        
         // Override point for customization after application launch.
         return true
     }
-
+    
     func applicationWillResignActive(_ application: UIApplication) {
         // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
         // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
@@ -39,6 +49,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+    }
+    
+    private func showPermissionScreen() {
+        guard let window = self.window,
+              let rootViewController = window.rootViewController else {
+            return
+        }
+        
+        // Only show if not already presented
+        if rootViewController.presentedViewController == nil {
+            let permissionVC = PermissionViewController()
+            permissionVC.onPermissionGranted = {
+                // Permissions granted and screen will dismiss
+            }
+            
+            permissionVC.modalPresentationStyle = UIModalPresentationStyle.fullScreen
+            rootViewController.present(permissionVC, animated: true, completion: nil)
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
