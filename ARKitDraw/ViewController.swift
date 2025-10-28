@@ -450,6 +450,8 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     // Authentication UI - now integrated into history table
     private var isUserAuthenticated: Bool = false
     private var userInfoLabel: UILabel!
+    private var signInMessageLabel: UILabel!
+    private var signInMessageContainer: UIView!
     
     // UI setup flag
     private var hasSetupUI = false
@@ -2089,6 +2091,39 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             userInfoLabel.heightAnchor.constraint(equalToConstant: 20)
         ])
         
+        // Create sign-in message container with padding
+        signInMessageContainer = UIView()
+        signInMessageContainer.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        signInMessageContainer.layer.cornerRadius = 12
+        signInMessageContainer.layer.masksToBounds = true
+        signInMessageContainer.translatesAutoresizingMaskIntoConstraints = false
+        
+        signInMessageLabel = UILabel()
+        signInMessageLabel.text = "Sign in or Create Account using the Sign in button to join the conversation"
+        signInMessageLabel.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        signInMessageLabel.textColor = UIColor.white
+        signInMessageLabel.textAlignment = .left
+        signInMessageLabel.numberOfLines = 0 // Allow multiple lines
+        signInMessageLabel.backgroundColor = UIColor.clear
+        signInMessageLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        signInMessageContainer.addSubview(signInMessageLabel)
+        view.addSubview(signInMessageContainer)
+        
+        // Position container in center of screen
+        NSLayoutConstraint.activate([
+            signInMessageContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            signInMessageContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            signInMessageContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+            signInMessageContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+            
+            // Position label inside container with small padding
+            signInMessageLabel.topAnchor.constraint(equalTo: signInMessageContainer.topAnchor, constant: 12),
+            signInMessageLabel.leadingAnchor.constraint(equalTo: signInMessageContainer.leadingAnchor, constant: 16),
+            signInMessageLabel.trailingAnchor.constraint(equalTo: signInMessageContainer.trailingAnchor, constant: -16),
+            signInMessageLabel.bottomAnchor.constraint(equalTo: signInMessageContainer.bottomAnchor, constant: -12)
+        ])
+        
         // Update authentication UI based on current state
         updateAuthenticationUI()
     }
@@ -2096,13 +2131,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
     func updateAuthenticationUI() {
         guard let firebaseService = firebaseService else { return }
         
-        // Safety check - ensure userInfoLabel exists
-        guard let userInfoLabel = userInfoLabel else { return }
+        // Safety check - ensure UI labels exist
+        guard let userInfoLabel = userInfoLabel,
+              let signInMessageLabel = signInMessageLabel,
+              let signInMessageContainer = signInMessageContainer else { return }
         
         if let currentUser = Auth.auth().currentUser, !currentUser.isAnonymous {
             // Authenticated user
             isUserAuthenticated = true
             userInfoLabel.text = "Signed In"
+            
+            // Hide sign-in message when authenticated
+            signInMessageContainer.isHidden = true
             
             // Load user profile
             loadUserProfile(userId: currentUser.uid)
@@ -2119,6 +2159,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             // No authenticated user
             isUserAuthenticated = false
             userInfoLabel.text = "Please Sign In"
+            
+            // Show sign-in message when not authenticated
+            signInMessageContainer.isHidden = false
             
             // Clear local tweets when not authenticated
             userTweets.removeAll()

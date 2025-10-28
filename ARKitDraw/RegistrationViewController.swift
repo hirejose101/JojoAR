@@ -291,7 +291,7 @@ class RegistrationViewController: UIViewController {
             // Activity Indicator
             activityIndicator.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             activityIndicator.topAnchor.constraint(equalTo: signInButton.bottomAnchor, constant: 20),
-            activityIndicator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20)
+            activityIndicator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -300)
         ])
     }
     
