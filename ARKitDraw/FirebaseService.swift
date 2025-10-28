@@ -371,6 +371,30 @@ class FirebaseService {
         }
     }
     
+    func reportTweet(tweetId: String, reportedBy: String, tweetAuthor: String, reason: String, tweetText: String, completion: @escaping (Error?) -> Void) {
+        let reportId = UUID().uuidString
+        let reportData: [String: Any] = [
+            "id": reportId,
+            "tweetId": tweetId,
+            "reportedBy": reportedBy,
+            "tweetAuthor": tweetAuthor,
+            "reason": reason,
+            "tweetText": tweetText,
+            "timestamp": Timestamp(date: Date()),
+            "status": "pending"
+        ]
+        
+        db.collection("reports").document(reportId).setData(reportData) { error in
+            if let error = error {
+                print("❌ Error reporting tweet: \(error.localizedDescription)")
+                completion(error)
+            } else {
+                print("✅ Tweet reported successfully: \(reportId)")
+                completion(nil)
+            }
+        }
+    }
+    
     // MARK: - Like Management
     
     func toggleLike(tweetId: String, userId: String, completion: @escaping (Error?) -> Void) {

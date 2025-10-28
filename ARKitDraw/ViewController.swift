@@ -3125,6 +3125,77 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         }
     }
     
+    func showReportOptions(for tweet: PersistentTweet, authorUsername: String) {
+        let alert = UIAlertController(
+            title: "Report Post",
+            message: "Why are you reporting this post?",
+            preferredStyle: .actionSheet
+        )
+        
+        // Report reasons
+        let reportReasons = [
+            ("Spam", "spam"),
+            ("Inappropriate Content", "inappropriate"),
+            ("Harassment", "harassment"),
+            ("False Information", "misinformation"),
+            ("Violence", "violence"),
+            ("Other", "other")
+        ]
+        
+        for (title, reason) in reportReasons {
+            alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                self?.submitReport(tweetId: tweet.id, reason: reason, tweetText: tweet.text, authorUsername: authorUsername)
+            })
+        }
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        // For iPad support
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        
+        present(alert, animated: true)
+    }
+    
+    func submitReport(tweetId: String, reason: String, tweetText: String, authorUsername: String) {
+        guard let firebaseService = firebaseService,
+              let reporterId = firebaseService.getCurrentUserId() else {
+            print("❌ User not authenticated")
+            return
+        }
+        
+        firebaseService.reportTweet(
+            tweetId: tweetId,
+            reportedBy: reporterId,
+            tweetAuthor: authorUsername,
+            reason: reason,
+            tweetText: tweetText
+        ) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    let errorAlert = UIAlertController(
+                        title: "Report Failed",
+                        message: "Failed to submit report: \(error.localizedDescription)",
+                        preferredStyle: .alert
+                    )
+                    errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(errorAlert, animated: true)
+                } else {
+                    let successAlert = UIAlertController(
+                        title: "Report Submitted",
+                        message: "Thank you for your report. We'll review it and take appropriate action.",
+                        preferredStyle: .alert
+                    )
+                    successAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(successAlert, animated: true)
+                }
+            }
+        }
+    }
+    
     @objc func authButtonTapped() {
         guard let firebaseService = firebaseService else { return }
         
@@ -3522,15 +3593,19 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 let localCoordinates = hitTestResult.localCoordinates
                 print("🎯 Local coordinates: x=\(localCoordinates.x), y=\(localCoordinates.y)")
                 
-                // The plane is 0.25 wide, so left half is < 0, right half is > 0
-                if localCoordinates.x < 0 {
-                    // Like button tapped (left side)
+                // The plane is divided into thirds: left=like, middle=comment, right=report
+                if localCoordinates.x < -0.083 {
+                    // Like button tapped (left third)
                     print("❤️ Like button tapped - coordinates: x=\(localCoordinates.x)")
                     handleLikeTapped(tweetId: tweetId)
-                } else {
-                    // Comment button tapped (right side)
+                } else if localCoordinates.x < 0.083 {
+                    // Comment button tapped (middle third)
                     print("💬 Comment button tapped - coordinates: x=\(localCoordinates.x)")
                     handleCommentTapped(tweetId: tweetId)
+                } else {
+                    // Report button tapped (right third)
+                    print("⋯ Report button tapped - coordinates: x=\(localCoordinates.x)")
+                    handleReportTapped(tweetId: tweetId)
                 }
                 return
             }
@@ -3884,6 +3959,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             self?.handleCommentTapped(tweetId: tweetId)
         }
         
+        interactionView.onReportTapped = { [weak self] tweetId in
+            self?.handleReportTapped(tweetId: tweetId)
+        }
+        
         // Create a 3D plane to hold the interaction view (rectangle shape)
         // Scale bar size based on tweet type for visual consistency
         let (planeWidth, planeHeight, viewWidth, viewHeight): (Float, Float, CGFloat, CGFloat)
@@ -4024,6 +4103,33 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // First, check if there are existing comments and show them
         showComments(for: tweetId)
+    }
+    
+    func handleReportTapped(tweetId: String) {
+        // Find the tweet data
+        var tweet = nearbyTweets.first { $0.id == tweetId }
+        var authorUsername = "Unknown"
+        
+        if tweet == nil {
+            tweet = userTweets.first { $0.id == tweetId }
+            authorUsername = "You" // This shouldn't happen for reports
+        } else {
+            // Get author username from social media posts if available
+            if let post = socialMediaPosts.first(where: { $0.tweet.id == tweetId }) {
+                authorUsername = post.authorUsername
+            }
+        }
+        
+        guard let tweetData = tweet else {
+            print("❌ Tweet not found for reporting")
+            return
+        }
+        
+        // Hide interaction view first
+        hideTweetInteractionView()
+        
+        // Show report options
+        showReportOptions(for: tweetData, authorUsername: authorUsername)
     }
     
     func showCommentInput() {
@@ -4848,6 +4954,16 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
             commentButton.translatesAutoresizingMaskIntoConstraints = false
             bubbleView.addSubview(commentButton)
             
+            // Create report menu button
+            let reportButton = UIButton(type: .system)
+            reportButton.setTitle("⋯", for: .normal)
+            reportButton.setTitleColor(UIColor.lightGray, for: .normal)
+            reportButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+            reportButton.tag = indexPath.row
+            reportButton.addTarget(self, action: #selector(socialWallReportButtonTapped(_:)), for: .touchUpInside)
+            reportButton.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.addSubview(reportButton)
+            
             // Layout - bubble has margins from cell edges to create gaps
             NSLayoutConstraint.activate([
                 bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 6),
@@ -4868,7 +4984,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
                 likeButton.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
                 
                 commentButton.centerYAnchor.constraint(equalTo: likeButton.centerYAnchor),
-                commentButton.leadingAnchor.constraint(equalTo: likeButton.trailingAnchor, constant: 16)
+                commentButton.leadingAnchor.constraint(equalTo: likeButton.trailingAnchor, constant: 16),
+                
+                reportButton.centerYAnchor.constraint(equalTo: likeButton.centerYAnchor),
+                reportButton.leadingAnchor.constraint(equalTo: commentButton.trailingAnchor, constant: 16)
             ])
             
             return cell
@@ -5120,6 +5239,17 @@ class ViewController: UIViewController, ARSCNViewDelegate, UITextFieldDelegate, 
         
         // Open comment input for this tweet
         openCommentInput(for: post.tweet.id)
+    }
+    
+    @objc func socialWallReportButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard index < socialMediaPosts.count else { return }
+        let post = socialMediaPosts[index]
+        
+        print("⋯ Report button tapped for social wall tweet: \(post.tweet.id)")
+        
+        // Show report options
+        showReportOptions(for: post.tweet, authorUsername: post.authorUsername)
     }
     
     @objc func myTweetLikeButtonTapped(_ sender: UIButton) {

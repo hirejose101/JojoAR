@@ -6,6 +6,7 @@ class TweetInteractionView: UIView {
     // MARK: - UI Components
     private let likeButton = UIButton(type: .system)
     private let commentButton = UIButton(type: .system)
+    private let reportButton = UIButton(type: .system)
     private let commentCountLabel = UILabel()
     private let stackView = UIStackView()
     
@@ -13,6 +14,7 @@ class TweetInteractionView: UIView {
     var tweetId: String?
     var onLikeTapped: ((String) -> Void)?
     var onCommentTapped: ((String) -> Void)?
+    var onReportTapped: ((String) -> Void)?
     
     // MARK: - Initialization
     override init(frame: CGRect) {
@@ -51,6 +53,13 @@ class TweetInteractionView: UIView {
         commentButton.tintColor = .white
         commentButton.addTarget(self, action: #selector(commentButtonTapped), for: .touchUpInside)
         
+        // Configure report button (3x larger)
+        let reportImage = UIImage(systemName: "ellipsis")
+        let largeReportImage = reportImage?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 36, weight: .medium))
+        reportButton.setImage(largeReportImage, for: .normal)
+        reportButton.tintColor = .white
+        reportButton.addTarget(self, action: #selector(reportButtonTapped), for: .touchUpInside)
+        
         // Configure comment count label (3x larger)
         commentCountLabel.textColor = .white
         commentCountLabel.font = UIFont.systemFont(ofSize: 30, weight: .medium) // 10 * 3 = 30
@@ -62,6 +71,7 @@ class TweetInteractionView: UIView {
         // Add buttons to stack view
         stackView.addArrangedSubview(likeButton)
         stackView.addArrangedSubview(commentButton)
+        stackView.addArrangedSubview(reportButton)
         
         // Setup constraints
         NSLayoutConstraint.activate([
@@ -71,7 +81,8 @@ class TweetInteractionView: UIView {
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
             
             likeButton.heightAnchor.constraint(equalToConstant: 72), // 24 * 3 = 72
-            commentButton.heightAnchor.constraint(equalToConstant: 72) // 24 * 3 = 72
+            commentButton.heightAnchor.constraint(equalToConstant: 72), // 24 * 3 = 72
+            reportButton.heightAnchor.constraint(equalToConstant: 72) // 24 * 3 = 72
         ])
     }
     
@@ -104,6 +115,11 @@ class TweetInteractionView: UIView {
     @objc private func commentButtonTapped() {
         guard let tweetId = tweetId else { return }
         onCommentTapped?(tweetId)
+    }
+    
+    @objc private func reportButtonTapped() {
+        guard let tweetId = tweetId else { return }
+        onReportTapped?(tweetId)
     }
 }
 
